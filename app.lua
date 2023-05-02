@@ -122,6 +122,10 @@ local sticks = {
 	right_len_cur = 0,
 	left_vel = 0,
 	right_vel = 0,
+	left_colliding_drum = nil,
+	right_colliding_drum = nil,
+	left_colliding_drum_prev = nil,
+	right_colliding_drum_prev = nil,
 	length = 0.4318,
 	rotation = -0.35,
 	pivot_offset = 0.12,
@@ -255,7 +259,9 @@ local function UpdateSticksVelocity()
 	local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length ):scale( 0.05 )
 	sticks.left_tip = vec3( m )
 	sticks.left_len_cur = sticks.left_tip:length()
-	sticks.left_vel = sticks.left_len_prev - sticks.left_len_cur
+	sticks.left_vel = MapRange( 0, 0.08, 0, 127, sticks.left_len_prev - sticks.left_len_cur )
+	if sticks.left_vel < 0 then sticks.left_vel = 0 end
+	if sticks.left_vel > 127 then sticks.left_vel = 127 end
 	sticks.left_len_prev = sticks.left_tip:length()
 
 	local pos = vec3( lovr.headset.getPosition( "hand/right" ) )
@@ -263,7 +269,9 @@ local function UpdateSticksVelocity()
 	local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length ):scale( 0.05 )
 	sticks.right_tip = vec3( m )
 	sticks.right_len_cur = sticks.right_tip:length()
-	sticks.right_vel = sticks.right_len_prev - sticks.right_len_cur
+	sticks.right_vel = MapRange( 0, 0.08, 0, 127, sticks.right_len_prev - sticks.right_len_cur )
+	if sticks.right_vel < 0 then sticks.right_vel = 0 end
+	if sticks.right_vel > 127 then sticks.right_vel = 127 end
 	sticks.right_len_prev = sticks.right_tip:length()
 end
 
@@ -346,50 +354,107 @@ function App.Update( dt )
 	world:update( dt )
 	world:computeOverlaps()
 
-	local collision_this_frame = false
-	local vv = 0
+	local L_col_this_frame = false
+	local R_col_this_frame = false
 
 	for shapeA, shapeB in world:overlaps() do
 		local are_colliding = world:collide( shapeA, shapeB )
-		if are_colliding and cur_collider_id == nil then
-			collision_this_frame = true
-			local vl = MapRange( 0, 0.07, 0, 125, sticks.left_vel )
-			local vr = MapRange( 0, 0.07, 0, 125, sticks.right_vel )
-
+		if are_colliding then
 			if shapeA:getCollider():getTag() == "drums" then
-				cur_collider_id = shapeA:getCollider():getUserData()
-				if shapeB:getCollider():getTag() == "stickL" then vv = vl end
-				if shapeB:getCollider():getTag() == "stickR" then vv = vr end
-				if vv > 125 then vv = 125 end
-				if vv < 0 then vv = 0 end
-				print( vv, "A", lovr.timer.getTime() )
-				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ cur_collider_id ].note, vv, 1 )
-				print( "port:", cur_MIDI_port )
-			end
-			if shapeB:getCollider():getTag() == "drums" then
-				cur_collider_id = shapeB:getCollider():getUserData()
-				if shapeA:getCollider():getTag() == "stickL" then vv = vl end
-				if shapeA:getCollider():getTag() == "stickR" then vv = vr end
-				if vv > 125 then vv = 125 end
-				if vv < 0 then vv = 0 end
-				print( vv, "B", lovr.timer.getTime() )
-				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ cur_collider_id ].note, vv, 1 )
-				print( "port:", cur_MIDI_port )
-			end
-		elseif are_colliding then
-			collision_this_frame = true
-			if shapeA:getCollider():getTag() == "drums" and shapeA:getCollider():getUserData() ~= cur_collider_id then
-				cur_collider_id = nil
-			end
-			if shapeB:getCollider():getTag() == "drums" and shapeB:getCollider():getUserData() ~= cur_collider_id then
-				cur_collider_id = nil
+				if shapeB:getCollider():getTag() == "stickL" then
+					L_col_this_frame = true
+					if sticks.left_colliding_drum == nil then
+						sticks.left_colliding_drum = shapeA:getCollider():getUserData()
+					end
+				elseif shapeB:getCollider():getTag() == "stickR" then
+					R_col_this_frame = true
+					if sticks.right_colliding_drum == nil then
+						sticks.right_colliding_drum = shapeA:getCollider():getUserData()
+					end
+				end
+			elseif shapeB:getCollider():getTag() == "drums" then
+				if shapeA:getCollider():getTag() == "stickL" then
+					L_col_this_frame = true
+					if sticks.left_colliding_drum == nil then
+						sticks.left_colliding_drum = shapeB:getCollider():getUserData()
+					end
+				elseif shapeA:getCollider():getTag() == "stickR" then
+					R_col_this_frame = true
+					if sticks.right_colliding_drum == nil then
+						sticks.right_colliding_drum = shapeB:getCollider():getUserData()
+					end
+				end
 			end
 		end
 	end
 
-	if not collision_this_frame then
-		cur_collider_id = nil
+	if sticks.left_colliding_drum ~= nil then
+		if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
+			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note, sticks.left_vel, 1 )
+			sticks.left_colliding_drum_prev = sticks.left_colliding_drum
+		end
 	end
+
+	if sticks.right_colliding_drum ~= nil then
+		if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
+			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note, sticks.right_vel, 1 )
+			sticks.right_colliding_drum_prev = sticks.right_colliding_drum
+		end
+	end
+
+	if not L_col_this_frame then
+		sticks.left_colliding_drum = nil
+		sticks.left_colliding_drum_prev = nil
+	end
+	if not R_col_this_frame then
+		sticks.right_colliding_drum = nil
+		sticks.right_colliding_drum_prev = nil
+	end
+
+	-- local collision_this_frame = false
+	-- local vv = 0
+
+	-- for shapeA, shapeB in world:overlaps() do
+	-- 	local are_colliding = world:collide( shapeA, shapeB )
+	-- 	if are_colliding and cur_collider_id == nil then
+	-- 		collision_this_frame = true
+	-- 		local vl = MapRange( 0, 0.07, 0, 125, sticks.left_vel )
+	-- 		local vr = MapRange( 0, 0.07, 0, 125, sticks.right_vel )
+
+	-- 		if shapeA:getCollider():getTag() == "drums" then
+	-- 			cur_collider_id = shapeA:getCollider():getUserData()
+	-- 			if shapeB:getCollider():getTag() == "stickL" then vv = vl end
+	-- 			if shapeB:getCollider():getTag() == "stickR" then vv = vr end
+	-- 			if vv > 125 then vv = 125 end
+	-- 			if vv < 0 then vv = 0 end
+	-- 			print( vv, "A", lovr.timer.getTime() )
+	-- 			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ cur_collider_id ].note, vv, 1 )
+	-- 			print( "port:", cur_MIDI_port )
+	-- 		end
+	-- 		if shapeB:getCollider():getTag() == "drums" then
+	-- 			cur_collider_id = shapeB:getCollider():getUserData()
+	-- 			if shapeA:getCollider():getTag() == "stickL" then vv = vl end
+	-- 			if shapeA:getCollider():getTag() == "stickR" then vv = vr end
+	-- 			if vv > 125 then vv = 125 end
+	-- 			if vv < 0 then vv = 0 end
+	-- 			print( vv, "B", lovr.timer.getTime() )
+	-- 			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ cur_collider_id ].note, vv, 1 )
+	-- 			print( "port:", cur_MIDI_port )
+	-- 		end
+	-- 	elseif are_colliding then
+	-- 		collision_this_frame = true
+	-- 		if shapeA:getCollider():getTag() == "drums" and shapeA:getCollider():getUserData() ~= cur_collider_id then
+	-- 			cur_collider_id = nil
+	-- 		end
+	-- 		if shapeB:getCollider():getTag() == "drums" and shapeB:getCollider():getUserData() ~= cur_collider_id then
+	-- 			cur_collider_id = nil
+	-- 		end
+	-- 	end
+	-- end
+
+	-- if not collision_this_frame then
+	-- 	cur_collider_id = nil
+	-- end
 
 
 	UI.InputInfo()
