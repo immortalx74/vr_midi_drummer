@@ -3,7 +3,9 @@ App = {}
 local MIDI = require "luamidi"
 local UI = require "ui/ui"
 local Phywire = require "phywire"
+local Json = require "json"
 
+local e_mode = { play = 1, move_piece = 2, move_kit = 3 }
 local e_axis = { x = 1, y = 2, z = 3 }
 
 local e_drum_kit_piece_type = {
@@ -22,10 +24,14 @@ local common_sizes = {
 	cymbal = { 14, 18, 19, 21 },                         -- CrashL 18, CrashR 19, Ride 21 = [0.4572, 0.4826, 0.5334]
 }
 
+local len_test = 0
+local moved_piece = nil
+local drag_offset = lovr.math.newMat4()
 local MIDI_ports = {}
 local cur_MIDI_port = 0
-local setup_window_pose = lovr.math.newMat4( vec3( -0.5, 1.3, -0.5 ), quat( 1, 0, 0, 0 ) )
-local cur_collider_id = nil
+local mode = e_mode.play
+local setup_window_pose = lovr.math.newMat4( vec3( -0.5, 1.5, -0.5 ), quat( 1, 0, 0, 0 ) )
+-- local cur_collider_id = nil
 local show_colliders = true
 local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
@@ -34,6 +40,7 @@ local world = lovr.physics.newWorld( 0, 0, 0, false, { "drums", "stickL", "stick
 local mdl_stick, mdl_cymbal, mdl_drum
 local cur_piece_index = 1
 local cur_drum_kit_index = 1
+local event_info = { note = 0, velocity = 0 }
 local drum_kits = {}
 
 local default_drum_kit = {
@@ -76,28 +83,28 @@ local default_drum_kit = {
 	},
 	{
 		type = e_drum_kit_piece_type.tom,
-		pose = lovr.math.newMat4( vec3( 0.6, 0.5, -0.3917 ), vec3( 0.4064, 0.3556, 0.4064 ), quat() ),
+		pose = lovr.math.newMat4( vec3( 0.75, 0.5, -0.2917 ), vec3( 0.4064, 0.3556, 0.4064 ), quat() ),
 		name = "Tom 16 X 14",
 		collider = nil,
 		note = 41
 	},
 	{
 		type = e_drum_kit_piece_type.hihat,
-		pose = lovr.math.newMat4( vec3( 0.39312, 0.96, -0.32883 ), vec3( 0.3556, 0.5, 0.3556 ), quat() ),
+		pose = lovr.math.newMat4( vec3( 0.39312, 1, -0.32883 ), vec3( 0.3556, 0.5, 0.3556 ), quat() ),
 		name = "Hihat 14",
 		collider = nil,
 		note = 61
 	},
 	{
 		type = e_drum_kit_piece_type.cymbal,
-		pose = lovr.math.newMat4( vec3( -0.19, 1.25, -0.913 ), vec3( 0.4572, 0.5, 0.4572 ), quat( 0.3839, 1, 0, 0 ) ),
+		pose = lovr.math.newMat4( vec3( -0.19, 1.5, -0.913 ), vec3( 0.4572, 0.5, 0.4572 ), quat( 0.3839, 1, 0, 0 ) ),
 		name = "Cymbal 18",
 		collider = nil,
 		note = 55
 	},
 	{
 		type = e_drum_kit_piece_type.cymbal,
-		pose = lovr.math.newMat4( vec3( 0.4599, 1.24, -0.9179 ), vec3( 0.4826, 0.5, 0.4826 ), quat( 0.5794, 1, 0, 0 ) ),
+		pose = lovr.math.newMat4( vec3( 0.4599, 1.5, -0.9179 ), vec3( 0.4826, 0.5, 0.4826 ), quat( 0.5794, 1, 0, 0 ) ),
 		name = "Cymbal 19",
 		collider = nil,
 		note = 57
@@ -114,8 +121,8 @@ local default_drum_kit = {
 local sticks = {
 	left_collider = nil,
 	right_collider = nil,
-	left_tip = nil,
-	right_tip = nil,
+	left_tip = lovr.math.newVec3( 0, 0, 0 ),
+	right_tip = lovr.math.newVec3( 0, 0, 0 ),
 	left_len_prev = 0,
 	left_len_cur = 0,
 	right_len_prev = 0,
@@ -130,8 +137,17 @@ local sticks = {
 	rotation = -0.35,
 	pivot_offset = 0.12,
 	left = lovr.math.newMat4(),
-	right = lovr.math.newMat4()
+	right = lovr.math.newMat4(),
+	left_tip_prev = lovr.math.newVec3( 0, 0, 0 ),
+	right_tip_prev = lovr.math.newVec3( 0, 0, 0 )
 }
+
+local function ReadFileToSTring( filename )
+	local f = assert( io.open( filename, "rb" ) )
+	local str = f:read( "*all" )
+	f:close()
+	return str
+end
 
 local function ShaderOn( pass )
 	pass:setShader( shader )
@@ -179,8 +195,16 @@ local function DrawUI( pass )
 	UI.NewFrame( pass )
 	UI.Begin( "FirstWindow", setup_window_pose )
 
+	if UI.Button( "Move piece" ) then
+		mode = e_mode.move_piece
+	end
+
+	UI.Label( "len: " .. len_test )
+
+	UI.Label( "Event: Note - " .. event_info.note .. ", Velocity - " .. event_info.velocity )
+
 	UI.Label( "MIDI ports", true )
-	local _, mp = UI.ListBox( "MIDI_ports", 5, 20, MIDI_ports, 1 )
+	local _, mp = UI.ListBox( "MIDI_ports", 5, 27, MIDI_ports, 1 )
 	cur_MIDI_port = mp - 1
 
 	UI.Label( "Drum Kits", true )
@@ -188,7 +212,7 @@ local function DrawUI( pass )
 	for i, v in ipairs( drum_kits ) do
 		table.insert( dkits, v.name )
 	end
-	UI.ListBox( "kits", 5, 20, dkits, 1 )
+	UI.ListBox( "kits", 5, 27, dkits, 1 )
 	UI.SameLine()
 	UI.Button( "Add kit", 300 )
 	UI.SameColumn()
@@ -199,7 +223,7 @@ local function DrawUI( pass )
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		table.insert( pieces, v.name )
 	end
-	local _, cur_piece_index = UI.ListBox( "pieces", 12, 20, pieces, 1 )
+	local _, cur_piece_index = UI.ListBox( "pieces", 12, 27, pieces, 1 )
 	UI.SameLine()
 	UI.Button( "Add piece", 300 )
 	UI.SameColumn()
@@ -221,19 +245,19 @@ local function DrawUI( pass )
 
 	UI.SameLine()
 	local changed = false
-	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
+	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Mapped note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
 
-	if UI.Button( "-X" ) then MoveDrumKit( e_axis.x, -0.1 ) end
+	if UI.Button( "-X" ) then MoveDrumKit( e_axis.x, -0.05 ) end
 	UI.SameLine()
-	if UI.Button( "+X" ) then MoveDrumKit( e_axis.x, 0.1 ) end
+	if UI.Button( "+X" ) then MoveDrumKit( e_axis.x, 0.05 ) end
 	UI.SameLine()
-	if UI.Button( "-Y" ) then MoveDrumKit( e_axis.y, -0.1 ) end
+	if UI.Button( "-Y" ) then MoveDrumKit( e_axis.y, -0.05 ) end
 	UI.SameLine()
-	if UI.Button( "+Y" ) then MoveDrumKit( e_axis.y, 0.1 ) end
+	if UI.Button( "+Y" ) then MoveDrumKit( e_axis.y, 0.05 ) end
 	UI.SameLine()
-	if UI.Button( "-Z" ) then MoveDrumKit( e_axis.z, -0.1 ) end
+	if UI.Button( "-Z" ) then MoveDrumKit( e_axis.z, -0.05 ) end
 	UI.SameLine()
-	if UI.Button( "+Z" ) then MoveDrumKit( e_axis.z, 0.1 ) end
+	if UI.Button( "+Z" ) then MoveDrumKit( e_axis.z, 0.05 ) end
 
 	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
 	UI.End( pass )
@@ -257,22 +281,34 @@ local function UpdateSticksVelocity()
 	local pos = vec3( lovr.headset.getPosition( "hand/left" ) )
 	local ori = quat( lovr.headset.getOrientation( "hand/left" ) )
 	local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length ):scale( 0.05 )
-	sticks.left_tip = vec3( m )
-	sticks.left_len_cur = sticks.left_tip:length()
-	sticks.left_vel = MapRange( 0, 0.08, 0, 127, sticks.left_len_prev - sticks.left_len_cur )
+	sticks.left_tip = lovr.math.newVec3( m )
+	-- sticks.left_len_cur = sticks.left_tip:length()
+	-- sticks.left_vel = MapRange( 0, 0.08, 0, 127, sticks.left_len_prev - sticks.left_len_cur )
+	sticks.left_vel = MapRange( 0, 0.14, 0, 127, sticks.left_tip:distance( sticks.left_tip_prev ) )
+	
+	if sticks.left_tip.y > sticks.left_tip_prev.y then sticks.left_vel = 0 end
+	
+	sticks.left_vel = math.floor( sticks.left_vel )
 	if sticks.left_vel < 0 then sticks.left_vel = 0 end
 	if sticks.left_vel > 127 then sticks.left_vel = 127 end
-	sticks.left_len_prev = sticks.left_tip:length()
+	-- sticks.left_len_prev = sticks.left_tip:length()
+	sticks.left_tip_prev = sticks.left_tip
 
 	local pos = vec3( lovr.headset.getPosition( "hand/right" ) )
 	local ori = quat( lovr.headset.getOrientation( "hand/right" ) )
 	local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length ):scale( 0.05 )
-	sticks.right_tip = vec3( m )
-	sticks.right_len_cur = sticks.right_tip:length()
-	sticks.right_vel = MapRange( 0, 0.08, 0, 127, sticks.right_len_prev - sticks.right_len_cur )
+	sticks.right_tip = lovr.math.newVec3( m )
+	-- sticks.right_len_cur = sticks.right_tip:length()
+	-- sticks.right_vel = MapRange( 0, 0.08, 0, 127, sticks.right_len_prev - sticks.right_len_cur )
+	sticks.right_vel = MapRange( 0, 0.14, 0, 127, sticks.right_tip:distance( sticks.right_tip_prev ) )
+
+	if sticks.right_tip.y > sticks.right_tip_prev.y then sticks.right_vel = 0 end
+
+	sticks.right_vel = math.floor( sticks.right_vel )
 	if sticks.right_vel < 0 then sticks.right_vel = 0 end
 	if sticks.right_vel > 127 then sticks.right_vel = 127 end
-	sticks.right_len_prev = sticks.right_tip:length()
+	-- sticks.right_len_prev = sticks.right_tip:length()
+	sticks.right_tip_prev = sticks.right_tip
 end
 
 local function DrawDrumKit( pass )
@@ -301,6 +337,14 @@ local function DrawSticks( pass )
 	pass:draw( mdl_stick, pose )
 end
 
+function lovr.keypressed( key, scancode, repeating )
+	if key == "space" then
+		MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ 2 ].note, 127, 1 )
+	end
+	local m = key
+	print( m )
+end
+
 function App.Init()
 	UI.Init()
 
@@ -317,14 +361,14 @@ function App.Init()
 	table.insert( drum_kits, default_drum_kit )
 	-- Load models
 	mdl_stick = lovr.graphics.newModel( "devmeshes/stick.glb" )
-	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal2.glb" )
+	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal3.glb" )
 	mdl_drum = lovr.graphics.newModel( "devmeshes/drum2.glb" )
 
 	-- Setup colliders
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		local x, y, z, sx, sy, sz = v.pose:unpack()
 		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
-			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.05 )
+			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.1 )
 		else
 			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, sy )
 		end
@@ -345,71 +389,119 @@ function App.Init()
 
 	world:disableCollisionBetween( "stickL", "stickR" )
 	world:disableCollisionBetween( "drums", "drums" )
+
+	local f = io.open( "testfile.txt", "wb" )
+	local t = {}
+	for i, v in ipairs( default_drum_kit ) do
+		local inner = {}
+		table.insert( inner, v.type )
+		table.insert( inner, v.name )
+		table.insert( inner, v.note )
+		local x, y, z, sx, sy, sz, angle, ax, ay, az = v.pose:unpack()
+		local p = { x, y, z, sx, sy, sz, angle, ax, ay, az }
+		table.insert( inner, p )
+		table.insert( t, inner )
+	end
+	local out = Json.encode( t )
+	f:write( out )
+	io.close( f )
 end
 
 function App.Update( dt )
 	UpdateSticksColliders()
 	UpdateSticksVelocity()
-
 	world:update( dt )
 	world:computeOverlaps()
 
-	local L_col_this_frame = false
-	local R_col_this_frame = false
-
-	for shapeA, shapeB in world:overlaps() do
-		local are_colliding = world:collide( shapeA, shapeB )
-		if are_colliding then
-			if shapeA:getCollider():getTag() == "drums" then
-				if shapeB:getCollider():getTag() == "stickL" then
-					L_col_this_frame = true
-					if sticks.left_colliding_drum == nil then
-						sticks.left_colliding_drum = shapeA:getCollider():getUserData()
-					end
-				elseif shapeB:getCollider():getTag() == "stickR" then
-					R_col_this_frame = true
-					if sticks.right_colliding_drum == nil then
-						sticks.right_colliding_drum = shapeA:getCollider():getUserData()
-					end
-				end
-			elseif shapeB:getCollider():getTag() == "drums" then
-				if shapeA:getCollider():getTag() == "stickL" then
-					L_col_this_frame = true
-					if sticks.left_colliding_drum == nil then
-						sticks.left_colliding_drum = shapeB:getCollider():getUserData()
-					end
-				elseif shapeA:getCollider():getTag() == "stickR" then
-					R_col_this_frame = true
-					if sticks.right_colliding_drum == nil then
-						sticks.right_colliding_drum = shapeB:getCollider():getUserData()
+	if mode == e_mode.move_piece then
+		if moved_piece == nil then
+			for shapeA, shapeB in world:overlaps() do
+				local are_colliding = world:collide( shapeA, shapeB )
+				if are_colliding then
+					if shapeB:getCollider():getTag() == "drums" and shapeA:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "a" ) then
+						moved_piece = shapeB:getCollider():getUserData()
+						drag_offset:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ moved_piece ].pose )
 					end
 				end
 			end
 		end
-	end
 
-	if sticks.left_colliding_drum ~= nil then
-		if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
-			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note, sticks.left_vel, 1 )
-			sticks.left_colliding_drum_prev = sticks.left_colliding_drum
+		if moved_piece ~= nil and lovr.headset.isDown( "hand/right", "a" ) then
+			drum_kits[ cur_drum_kit_index ][ moved_piece ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_offset )
+			drum_kits[ cur_drum_kit_index ][ moved_piece ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ moved_piece ].pose ),
+				quat( drum_kits[ cur_drum_kit_index ][ moved_piece ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
+		end
+
+		if moved_piece ~= nil and lovr.headset.wasReleased( "hand/right", "a" ) then
+			moved_piece = nil
+			mode = e_mode.play
 		end
 	end
 
-	if sticks.right_colliding_drum ~= nil then
-		if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
-			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note, sticks.right_vel, 1 )
-			sticks.right_colliding_drum_prev = sticks.right_colliding_drum
+	if mode == e_mode.play then
+		local L_col_this_frame = false
+		local R_col_this_frame = false
+
+		for shapeA, shapeB in world:overlaps() do
+			local are_colliding = world:collide( shapeA, shapeB )
+			if are_colliding then
+				if shapeA:getCollider():getTag() == "drums" then
+					if shapeB:getCollider():getTag() == "stickL" then
+						L_col_this_frame = true
+						if sticks.left_colliding_drum == nil then
+							sticks.left_colliding_drum = shapeA:getCollider():getUserData()
+						end
+					elseif shapeB:getCollider():getTag() == "stickR" then
+						R_col_this_frame = true
+						if sticks.right_colliding_drum == nil then
+							sticks.right_colliding_drum = shapeA:getCollider():getUserData()
+						end
+					end
+				elseif shapeB:getCollider():getTag() == "drums" then
+					if shapeA:getCollider():getTag() == "stickL" then
+						L_col_this_frame = true
+						if sticks.left_colliding_drum == nil then
+							sticks.left_colliding_drum = shapeB:getCollider():getUserData()
+						end
+					elseif shapeA:getCollider():getTag() == "stickR" then
+						R_col_this_frame = true
+						if sticks.right_colliding_drum == nil then
+							sticks.right_colliding_drum = shapeB:getCollider():getUserData()
+						end
+					end
+				end
+			end
+		end
+
+		if sticks.left_colliding_drum ~= nil then
+			if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
+				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note, sticks.left_vel, 1 )
+				sticks.left_colliding_drum_prev = sticks.left_colliding_drum
+				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note
+				if sticks.left_vel > 0 then event_info.velocity = sticks.left_vel end
+			end
+		end
+
+		if sticks.right_colliding_drum ~= nil then
+			if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
+				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note, sticks.right_vel, 1 )
+				sticks.right_colliding_drum_prev = sticks.right_colliding_drum
+				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note
+				if sticks.right_vel > 0 then event_info.velocity = sticks.right_vel end
+			end
+		end
+
+		if not L_col_this_frame then
+			sticks.left_colliding_drum = nil
+			sticks.left_colliding_drum_prev = nil
+		end
+		if not R_col_this_frame then
+			sticks.right_colliding_drum = nil
+			sticks.right_colliding_drum_prev = nil
 		end
 	end
 
-	if not L_col_this_frame then
-		sticks.left_colliding_drum = nil
-		sticks.left_colliding_drum_prev = nil
-	end
-	if not R_col_this_frame then
-		sticks.right_colliding_drum = nil
-		sticks.right_colliding_drum_prev = nil
-	end
+
 
 	-- local collision_this_frame = false
 	-- local vv = 0
@@ -476,7 +568,7 @@ function App.RenderFrame( pass )
 	-- local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length):scale(0.05)
 	-- pass:box( m )
 	local m = mat4( sticks.left_tip, vec3( 0.03 ) )
-	pass:box( m )
+	-- pass:box( m )
 
 	ShaderOff( pass )
 	if show_colliders then Phywire.draw( pass, world, Phywire.render_shapes ) end
