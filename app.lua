@@ -24,6 +24,7 @@ local common_sizes = {
 	cymbal = { 14, 18, 19, 21 },                         -- CrashL 18, CrashR 19, Ride 21 = [0.4572, 0.4826, 0.5334]
 }
 
+local drag_table = {}
 local len_test = 0
 local moved_piece = nil
 local drag_offset = lovr.math.newMat4()
@@ -31,7 +32,6 @@ local MIDI_ports = {}
 local cur_MIDI_port = 0
 local mode = e_mode.play
 local setup_window_pose = lovr.math.newMat4( vec3( -0.5, 1.5, -0.5 ), quat( 1, 0, 0, 0 ) )
--- local cur_collider_id = nil
 local show_colliders = true
 local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
@@ -123,10 +123,6 @@ local sticks = {
 	right_collider = nil,
 	left_tip = lovr.math.newVec3( 0, 0, 0 ),
 	right_tip = lovr.math.newVec3( 0, 0, 0 ),
-	left_len_prev = 0,
-	left_len_cur = 0,
-	right_len_prev = 0,
-	right_len_cur = 0,
 	left_vel = 0,
 	right_vel = 0,
 	left_colliding_drum = nil,
@@ -186,8 +182,11 @@ local function MoveDrumKit( axis, distance )
 
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
-		drum_kits[ cur_drum_kit_index ][ i ].pose:set( vec3( x + dx, y + dy, z + dz ), vec3( sx, sy, sz ), quat( angle, ax, ay, az ) )
-		drum_kits[ cur_drum_kit_index ][ i ].collider:setPosition( x + dx, y + dy, z + dz )
+		-- drum_kits[ cur_drum_kit_index ][ i ].pose:set( vec3( x + dx, y + dy, z + dz ), vec3( sx, sy, sz ), quat( angle, ax, ay, az ) )
+		drum_kits[ cur_drum_kit_index ][ i ].pose[ 1 ] = drum_kits[ cur_drum_kit_index ][ i ].pose[ 1 ] + dy
+		-- drum_kits[ cur_drum_kit_index ][ i ].collider:setPosition( x + dx, y + dy, z + dz )
+		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
+		drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( x, y, z ), quat( angle, ax, ay, az ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 	end
 end
 
@@ -282,32 +281,22 @@ local function UpdateSticksVelocity()
 	local ori = quat( lovr.headset.getOrientation( "hand/left" ) )
 	local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length ):scale( 0.05 )
 	sticks.left_tip = lovr.math.newVec3( m )
-	-- sticks.left_len_cur = sticks.left_tip:length()
-	-- sticks.left_vel = MapRange( 0, 0.08, 0, 127, sticks.left_len_prev - sticks.left_len_cur )
 	sticks.left_vel = MapRange( 0, 0.14, 0, 127, sticks.left_tip:distance( sticks.left_tip_prev ) )
-	
 	if sticks.left_tip.y > sticks.left_tip_prev.y then sticks.left_vel = 0 end
-	
 	sticks.left_vel = math.floor( sticks.left_vel )
 	if sticks.left_vel < 0 then sticks.left_vel = 0 end
 	if sticks.left_vel > 127 then sticks.left_vel = 127 end
-	-- sticks.left_len_prev = sticks.left_tip:length()
 	sticks.left_tip_prev = sticks.left_tip
 
 	local pos = vec3( lovr.headset.getPosition( "hand/right" ) )
 	local ori = quat( lovr.headset.getOrientation( "hand/right" ) )
 	local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length ):scale( 0.05 )
 	sticks.right_tip = lovr.math.newVec3( m )
-	-- sticks.right_len_cur = sticks.right_tip:length()
-	-- sticks.right_vel = MapRange( 0, 0.08, 0, 127, sticks.right_len_prev - sticks.right_len_cur )
 	sticks.right_vel = MapRange( 0, 0.14, 0, 127, sticks.right_tip:distance( sticks.right_tip_prev ) )
-
 	if sticks.right_tip.y > sticks.right_tip_prev.y then sticks.right_vel = 0 end
-
 	sticks.right_vel = math.floor( sticks.right_vel )
 	if sticks.right_vel < 0 then sticks.right_vel = 0 end
 	if sticks.right_vel > 127 then sticks.right_vel = 127 end
-	-- sticks.right_len_prev = sticks.right_tip:length()
 	sticks.right_tip_prev = sticks.right_tip
 end
 
@@ -390,21 +379,21 @@ function App.Init()
 	world:disableCollisionBetween( "stickL", "stickR" )
 	world:disableCollisionBetween( "drums", "drums" )
 
-	local f = io.open( "testfile.txt", "wb" )
-	local t = {}
-	for i, v in ipairs( default_drum_kit ) do
-		local inner = {}
-		table.insert( inner, v.type )
-		table.insert( inner, v.name )
-		table.insert( inner, v.note )
-		local x, y, z, sx, sy, sz, angle, ax, ay, az = v.pose:unpack()
-		local p = { x, y, z, sx, sy, sz, angle, ax, ay, az }
-		table.insert( inner, p )
-		table.insert( t, inner )
-	end
-	local out = Json.encode( t )
-	f:write( out )
-	io.close( f )
+	-- local f = io.open( "testfile.txt", "wb" )
+	-- local t = {}
+	-- for i, v in ipairs( default_drum_kit ) do
+	-- 	local inner = {}
+	-- 	table.insert( inner, v.type )
+	-- 	table.insert( inner, v.name )
+	-- 	table.insert( inner, v.note )
+	-- 	local x, y, z, sx, sy, sz, angle, ax, ay, az = v.pose:unpack()
+	-- 	local p = { x, y, z, sx, sy, sz, angle, ax, ay, az }
+	-- 	table.insert( inner, p )
+	-- 	table.insert( t, inner )
+	-- end
+	-- local out = Json.encode( t )
+	-- f:write( out )
+	-- io.close( f )
 end
 
 function App.Update( dt )
@@ -412,6 +401,22 @@ function App.Update( dt )
 	UpdateSticksVelocity()
 	world:update( dt )
 	world:computeOverlaps()
+
+	if lovr.headset.isDown( "hand/right", "a" ) then
+		mode = e_mode.move_piece
+	end
+	if lovr.headset.wasReleased( "hand/right", "a" ) then
+		moved_piece = nil
+		mode = e_mode.play
+	end
+
+	if lovr.headset.isDown( "hand/right", "b" ) then
+		mode = e_mode.move_kit
+	end
+	if lovr.headset.wasReleased( "hand/right", "b" ) then
+		moved_piece = nil
+		mode = e_mode.play
+	end
 
 	if mode == e_mode.move_piece then
 		if moved_piece == nil then
@@ -422,19 +427,54 @@ function App.Update( dt )
 						moved_piece = shapeB:getCollider():getUserData()
 						drag_offset:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ moved_piece ].pose )
 					end
+					if shapeA:getCollider():getTag() == "drums" and shapeB:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "a" ) then
+						moved_piece = shapeA:getCollider():getUserData()
+						drag_offset:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ moved_piece ].pose )
+					end
 				end
 			end
 		end
 
-		if moved_piece ~= nil and lovr.headset.isDown( "hand/right", "a" ) then
+		if moved_piece ~= nil then
 			drum_kits[ cur_drum_kit_index ][ moved_piece ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_offset )
 			drum_kits[ cur_drum_kit_index ][ moved_piece ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ moved_piece ].pose ),
 				quat( drum_kits[ cur_drum_kit_index ][ moved_piece ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 		end
+	end
 
-		if moved_piece ~= nil and lovr.headset.wasReleased( "hand/right", "a" ) then
-			moved_piece = nil
-			mode = e_mode.play
+	if mode == e_mode.move_kit then
+		if moved_piece == nil then
+			for shapeA, shapeB in world:overlaps() do
+				local are_colliding = world:collide( shapeA, shapeB )
+				if are_colliding then
+					if shapeB:getCollider():getTag() == "drums" and shapeA:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "b" ) then
+						moved_piece = shapeB:getCollider():getUserData()
+						drag_table = {}
+						for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+							local m = lovr.math.newMat4()
+							m:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][i ].pose )
+							table.insert( drag_table, m )
+						end
+					end
+					if shapeA:getCollider():getTag() == "drums" and shapeB:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "b" ) then
+						moved_piece = shapeA:getCollider():getUserData()
+						drag_table = {}
+						for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+							local m = lovr.math.newMat4()
+							m:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ i ].pose )
+							table.insert( drag_table, m )
+						end
+					end
+				end
+			end
+		end
+
+		if moved_piece ~= nil then
+			for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+				drum_kits[ cur_drum_kit_index ][ i ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_table[i] )
+				drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
+					quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
+			end
 		end
 	end
 
@@ -501,54 +541,6 @@ function App.Update( dt )
 		end
 	end
 
-
-
-	-- local collision_this_frame = false
-	-- local vv = 0
-
-	-- for shapeA, shapeB in world:overlaps() do
-	-- 	local are_colliding = world:collide( shapeA, shapeB )
-	-- 	if are_colliding and cur_collider_id == nil then
-	-- 		collision_this_frame = true
-	-- 		local vl = MapRange( 0, 0.07, 0, 125, sticks.left_vel )
-	-- 		local vr = MapRange( 0, 0.07, 0, 125, sticks.right_vel )
-
-	-- 		if shapeA:getCollider():getTag() == "drums" then
-	-- 			cur_collider_id = shapeA:getCollider():getUserData()
-	-- 			if shapeB:getCollider():getTag() == "stickL" then vv = vl end
-	-- 			if shapeB:getCollider():getTag() == "stickR" then vv = vr end
-	-- 			if vv > 125 then vv = 125 end
-	-- 			if vv < 0 then vv = 0 end
-	-- 			print( vv, "A", lovr.timer.getTime() )
-	-- 			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ cur_collider_id ].note, vv, 1 )
-	-- 			print( "port:", cur_MIDI_port )
-	-- 		end
-	-- 		if shapeB:getCollider():getTag() == "drums" then
-	-- 			cur_collider_id = shapeB:getCollider():getUserData()
-	-- 			if shapeA:getCollider():getTag() == "stickL" then vv = vl end
-	-- 			if shapeA:getCollider():getTag() == "stickR" then vv = vr end
-	-- 			if vv > 125 then vv = 125 end
-	-- 			if vv < 0 then vv = 0 end
-	-- 			print( vv, "B", lovr.timer.getTime() )
-	-- 			MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ cur_collider_id ].note, vv, 1 )
-	-- 			print( "port:", cur_MIDI_port )
-	-- 		end
-	-- 	elseif are_colliding then
-	-- 		collision_this_frame = true
-	-- 		if shapeA:getCollider():getTag() == "drums" and shapeA:getCollider():getUserData() ~= cur_collider_id then
-	-- 			cur_collider_id = nil
-	-- 		end
-	-- 		if shapeB:getCollider():getTag() == "drums" and shapeB:getCollider():getUserData() ~= cur_collider_id then
-	-- 			cur_collider_id = nil
-	-- 		end
-	-- 	end
-	-- end
-
-	-- if not collision_this_frame then
-	-- 	cur_collider_id = nil
-	-- end
-
-
 	UI.InputInfo()
 end
 
@@ -559,14 +551,6 @@ function App.RenderFrame( pass )
 	DrawDrumKit( pass )
 	DrawSticks( pass )
 
-	-- 0.4   0.1
-	-- 1     X
-	-- x = 0.1/0.4
-
-	-- local pos = vec3( lovr.headset.getPosition( "hand/left" ) )
-	-- local ori = quat( lovr.headset.getOrientation( "hand/left" ) )
-	-- local m = mat4( pos, ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, -sticks.pivot_offset / sticks.length):scale(0.05)
-	-- pass:box( m )
 	local m = mat4( sticks.left_tip, vec3( 0.03 ) )
 	-- pass:box( m )
 
