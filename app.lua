@@ -24,8 +24,9 @@ local common_sizes = {
 	cymbal = { 14, 18, 19, 21 },                         -- CrashL 18, CrashR 19, Ride 21 = [0.4572, 0.4826, 0.5334]
 }
 
+local keybind_window_open = false
+local key_pressed = nil
 local drag_table = {}
-local len_test = 0
 local moved_piece = nil
 local drag_offset = lovr.math.newMat4()
 local MIDI_ports = {}
@@ -162,10 +163,10 @@ local function ShaderOff( pass )
 end
 
 local function SetEnvironment( pass )
-	pass:setColor( .1, .1, .12 )
-	pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0 )
-	pass:setColor( .2, .2, .2 )
-	pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0, 'line', 50, 50 )
+	-- pass:setColor( .1, .1, .12 )
+	-- pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0 )
+	-- pass:setColor( .2, .2, .2 )
+	-- pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0, 'line', 50, 50 )
 	pass:setColor( 1, 1, 1 )
 	pass:skybox( cube )
 end
@@ -184,9 +185,7 @@ local function MoveDrumKit( axis, distance )
 
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
-		-- drum_kits[ cur_drum_kit_index ][ i ].pose:set( vec3( x + dx, y + dy, z + dz ), vec3( sx, sy, sz ), quat( angle, ax, ay, az ) )
 		drum_kits[ cur_drum_kit_index ][ i ].pose[ 1 ] = drum_kits[ cur_drum_kit_index ][ i ].pose[ 1 ] + dy
-		-- drum_kits[ cur_drum_kit_index ][ i ].collider:setPosition( x + dx, y + dy, z + dz )
 		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
 		drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( x, y, z ), quat( angle, ax, ay, az ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 	end
@@ -226,6 +225,29 @@ local function UpdateSticksVelocity()
 	if sticks.right_vel < 0 then sticks.right_vel = 0 end
 	if sticks.right_vel > 127 then sticks.right_vel = 127 end
 	sticks.right_tip_prev = sticks.right_tip
+end
+
+local function SetupDrumColliders()
+	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+		local x, y, z, sx, sy, sz = v.pose:unpack()
+
+		if v.collider ~= nil then
+			collider:destroy()
+		end
+
+		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
+			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.1 )
+		else
+			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, sy )
+		end
+
+		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
+		drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ), quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
+
+		v.collider:setKinematic( true )
+		v.collider:setTag( "drums" )
+		v.collider:setUserData( i )
+	end
 end
 
 local function DrawDrumKit( pass )
@@ -270,6 +292,7 @@ local function LoadKits()
 			cur_piece.name = kits[ i ][ "kitpieces" ][ j ][ "name" ]
 			cur_piece.note = kits[ i ][ "kitpieces" ][ j ][ "note" ]
 			cur_piece.type = kits[ i ][ "kitpieces" ][ j ][ "type" ]
+			cur_piece.keybind = kits[ i ][ "kitpieces" ][ j ][ "keybind" ]
 			local f = kits[ i ][ "kitpieces" ][ j ][ "pose" ]
 			cur_piece.pose = lovr.math.newMat4( vec3( f[ 1 ], f[ 2 ], f[ 3 ] ), vec3( f[ 4 ], f[ 5 ], f[ 6 ] ), quat( f[ 7 ], f[ 8 ], f[ 9 ], f[ 10 ] ) )
 			table.insert( cur_kit, cur_piece )
@@ -293,6 +316,7 @@ local function SaveKits()
 			cur_piece[ "name" ] = drum_kits[ i ][ j ].name
 			cur_piece[ "note" ] = drum_kits[ i ][ j ].note
 			cur_piece[ "type" ] = drum_kits[ i ][ j ].type
+			cur_piece[ "keybind" ] = drum_kits[ i ][ j ].keybind
 			local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ i ][ j ].pose:unpack()
 			local pose = { x, y, z, sx, sy, sz, angle, ax, ay, az }
 			cur_piece.pose = pose
@@ -358,20 +382,65 @@ local function DrawUI( pass )
 
 	UI.SameLine()
 	local changed = false
-	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Mapped note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
+	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
+	local cur_bind = "-- none --"
+	if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind ~= "" then
+		cur_bind = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind
+	end
+	UI.Label( "Current Keybind: " .. cur_bind )
+	if UI.Button( "Assign key..." ) then
+		keybind_window_open = true
+	end
 
 	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
 	UI.End( pass )
+
+	-- keybind window
+	if keybind_window_open then
+		local m = mat4( setup_window_pose )
+		m:translate( 0, 0, 0.01 )
+		UI.Begin( "keybind_window", m, true )
+		UI.Label( "Press key to assign..." )
+
+		local detected = ""
+		if key_pressed then
+			detected = key_pressed
+		end
+		UI.Label( "Key:" .. detected )
+		if UI.Button( "OK" ) then
+			if key_pressed then
+				drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind = key_pressed
+			end
+			keybind_window_open = false
+			key_pressed = nil
+			UI.EndModalWindow()
+		end
+		UI.SameLine()
+		if UI.Button( "Cancel" ) then
+			keybind_window_open = false
+			key_pressed = nil
+			UI.EndModalWindow()
+		end
+		UI.End( pass )
+	end
 
 	ui_passes = UI.RenderFrame( pass )
 end
 
 function lovr.keypressed( key, scancode, repeating )
-	if key == "space" then
-		MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ 2 ].note, 127, 1 )
+	if keybind_window_open then
+		if key then
+			key_pressed = key
+		end
+	else
+		local pieces = drum_kits[ cur_drum_kit_index ]
+		for i, v in ipairs( pieces ) do
+			if key == pieces[ i ].keybind then
+				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note, 127, 1 )
+				break
+			end
+		end
 	end
-	local m = key
-	print( m )
 end
 
 function App.Init()
@@ -392,22 +461,7 @@ function App.Init()
 	mdl_drum = lovr.graphics.newModel( "devmeshes/drum3.glb" )
 
 	LoadKits()
-
-	-- Setup colliders
-	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-		local x, y, z, sx, sy, sz = v.pose:unpack()
-		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
-			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.1 )
-		else
-			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, sy )
-		end
-		local q = quat( v.pose )
-		v.collider:setPosition( x, y, z )
-		v.collider:setOrientation( quat( math.pi / 2, 1, 0, 0 ):mul( q ) )
-		v.collider:setKinematic( true )
-		v.collider:setTag( "drums" )
-		v.collider:setUserData( i )
-	end
+	SetupDrumColliders()
 
 	sticks.left_collider = world:newCylinderCollider( 0, 0, 0, 0.01, sticks.length )
 	sticks.left_collider:setKinematic( true )
