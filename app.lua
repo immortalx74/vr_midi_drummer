@@ -232,7 +232,7 @@ local function SetupDrumColliders()
 		local x, y, z, sx, sy, sz = v.pose:unpack()
 
 		if v.collider ~= nil then
-			collider:destroy()
+			v.collider:destroy()
 		end
 
 		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
@@ -330,6 +330,23 @@ local function SaveKits()
 	io.close( f )
 end
 
+local function AddKit()
+	local new_kit = { name = "Custom kit" }
+
+	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+		local piece = {}
+		piece.name = v.name
+		piece.type = v.type
+		piece.note = v.note
+		piece.keybind = v.keybind
+		piece.collider = v.collider
+		local x, y, z, sx, sy, sz, angle, ax, ay, az = v.pose:unpack()
+		piece.pose = lovr.math.newMat4( vec3( x, y, z ), vec3( sx, sy, sz ), quat( angle, ax, ay, az ) )
+		table.insert( new_kit, piece )
+	end
+	table.insert( drum_kits, new_kit )
+end
+
 local function DrawUI( pass )
 	UI.NewFrame( pass )
 	UI.Begin( "FirstWindow", setup_window_pose )
@@ -345,9 +362,17 @@ local function DrawUI( pass )
 	for i, v in ipairs( drum_kits ) do
 		table.insert( dkits, v.name )
 	end
-	UI.ListBox( "kits", 6, 27, dkits, 1 )
+
+	local changed, idx = UI.ListBox( "kits", 6, 27, dkits, 1 )
+	if changed then
+		cur_drum_kit_index = idx
+		cur_piece_index = 1
+		SetupDrumColliders()
+	end
 	UI.SameLine()
-	UI.Button( "Add kit", 300 )
+	if UI.Button( "Add kit", 300 ) then
+		AddKit()
+	end
 	UI.SameColumn()
 	UI.Button( "Delete kit", 300 )
 	UI.SameColumn()
@@ -381,7 +406,7 @@ local function DrawUI( pass )
 	end
 
 	UI.SameLine()
-	local changed = false
+	local changed
 	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
 	local cur_bind = "-- none --"
 	if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind ~= "" then
