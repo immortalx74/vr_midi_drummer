@@ -166,6 +166,8 @@ local function SetEnvironment( pass )
 	pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0 )
 	pass:setColor( .2, .2, .2 )
 	pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0, 'line', 50, 50 )
+	pass:setColor( 1, 1, 1 )
+	pass:skybox( cube )
 end
 
 local function MapRange( from_min, from_max, to_min, to_max, v )
@@ -188,80 +190,6 @@ local function MoveDrumKit( axis, distance )
 		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
 		drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( x, y, z ), quat( angle, ax, ay, az ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 	end
-end
-
-local function DrawUI( pass )
-	UI.NewFrame( pass )
-	UI.Begin( "FirstWindow", setup_window_pose )
-
-	if UI.Button( "Move piece" ) then
-		mode = e_mode.move_piece
-	end
-
-	UI.Label( "len: " .. len_test )
-
-	UI.Label( "Event: Note - " .. event_info.note .. ", Velocity - " .. event_info.velocity )
-
-	UI.Label( "MIDI ports", true )
-	local _, mp = UI.ListBox( "MIDI_ports", 5, 27, MIDI_ports, 1 )
-	cur_MIDI_port = mp - 1
-
-	UI.Label( "Drum Kits", true )
-	local dkits = {}
-	for i, v in ipairs( drum_kits ) do
-		table.insert( dkits, v.name )
-	end
-	UI.ListBox( "kits", 5, 27, dkits, 1 )
-	UI.SameLine()
-	UI.Button( "Add kit", 300 )
-	UI.SameColumn()
-	UI.Button( "Delete kit", 300 )
-
-	UI.Label( "Pieces", true )
-	local pieces = {}
-	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-		table.insert( pieces, v.name )
-	end
-	local _, cur_piece_index = UI.ListBox( "pieces", 12, 27, pieces, 1 )
-	UI.SameLine()
-	UI.Button( "Add piece", 300 )
-	UI.SameColumn()
-	UI.Button( "Delete piece", 300 )
-
-	if UI.Button( "-" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note > 0 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note - 1
-		end
-	end
-
-	UI.SameLine()
-
-	if UI.Button( "+" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note < 127 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note + 1
-		end
-	end
-
-	UI.SameLine()
-	local changed = false
-	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Mapped note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
-
-	if UI.Button( "-X" ) then MoveDrumKit( e_axis.x, -0.05 ) end
-	UI.SameLine()
-	if UI.Button( "+X" ) then MoveDrumKit( e_axis.x, 0.05 ) end
-	UI.SameLine()
-	if UI.Button( "-Y" ) then MoveDrumKit( e_axis.y, -0.05 ) end
-	UI.SameLine()
-	if UI.Button( "+Y" ) then MoveDrumKit( e_axis.y, 0.05 ) end
-	UI.SameLine()
-	if UI.Button( "-Z" ) then MoveDrumKit( e_axis.z, -0.05 ) end
-	UI.SameLine()
-	if UI.Button( "+Z" ) then MoveDrumKit( e_axis.z, 0.05 ) end
-
-	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
-	UI.End( pass )
-
-	ui_passes = UI.RenderFrame( pass )
 end
 
 local function UpdateSticksColliders()
@@ -326,6 +254,118 @@ local function DrawSticks( pass )
 	pass:draw( mdl_stick, pose )
 end
 
+local function LoadKits()
+	local str = ReadFileToSTring( "kitout.txt" )
+	local decoded = Json.decode( str )
+	local kits = Json.decode( str )
+
+	local num_kits = #kits
+	for i = 1, num_kits do
+		local cur_kit = {}
+		cur_kit.name = kits[ i ][ "kitname" ]
+		local num_pieces = #kits[ i ][ "kitpieces" ]
+
+		for j = 1, num_pieces do
+			local cur_piece = {}
+			cur_piece.name = kits[ i ][ "kitpieces" ][ j ][ "name" ]
+			cur_piece.note = kits[ i ][ "kitpieces" ][ j ][ "note" ]
+			cur_piece.type = kits[ i ][ "kitpieces" ][ j ][ "type" ]
+			local f = kits[ i ][ "kitpieces" ][ j ][ "pose" ]
+			cur_piece.pose = lovr.math.newMat4( vec3( f[ 1 ], f[ 2 ], f[ 3 ] ), vec3( f[ 4 ], f[ 5 ], f[ 6 ] ), quat( f[ 7 ], f[ 8 ], f[ 9 ], f[ 10 ] ) )
+			table.insert( cur_kit, cur_piece )
+		end
+		table.insert( drum_kits, cur_kit )
+	end
+end
+
+local function SaveKits()
+	local f = io.open( "kitout.txt", "wb" )
+	local kits = {}
+	local num_kits = #drum_kits
+
+	for i = 1, num_kits do
+		local cur_kit = {}
+		cur_kit[ "kitname" ] = drum_kits[ i ].name
+		cur_kit[ "kitpieces" ] = {}
+		local num_pieces = #drum_kits[ i ]
+		for j = 1, num_pieces do
+			local cur_piece = {}
+			cur_piece[ "name" ] = drum_kits[ i ][ j ].name
+			cur_piece[ "note" ] = drum_kits[ i ][ j ].note
+			cur_piece[ "type" ] = drum_kits[ i ][ j ].type
+			local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ i ][ j ].pose:unpack()
+			local pose = { x, y, z, sx, sy, sz, angle, ax, ay, az }
+			cur_piece.pose = pose
+			table.insert( cur_kit[ "kitpieces" ], cur_piece )
+		end
+		table.insert( kits, cur_kit )
+	end
+
+	local out = Json.encode( kits )
+	f:write( out )
+	io.close( f )
+end
+
+local function DrawUI( pass )
+	UI.NewFrame( pass )
+	UI.Begin( "FirstWindow", setup_window_pose )
+
+	UI.Label( "Event: Note - " .. event_info.note .. ", Velocity - " .. event_info.velocity )
+
+	UI.Label( "MIDI ports", true )
+	local _, mp = UI.ListBox( "MIDI_ports", 5, 27, MIDI_ports, 1 )
+	cur_MIDI_port = mp - 1
+
+	UI.Label( "Drum Kits", true )
+	local dkits = {}
+	for i, v in ipairs( drum_kits ) do
+		table.insert( dkits, v.name )
+	end
+	UI.ListBox( "kits", 6, 27, dkits, 1 )
+	UI.SameLine()
+	UI.Button( "Add kit", 300 )
+	UI.SameColumn()
+	UI.Button( "Delete kit", 300 )
+	UI.SameColumn()
+	if UI.Button( "Save all", 300 ) then
+		SaveKits()
+	end
+
+	UI.Label( "Pieces", true )
+	local pieces = {}
+	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+		table.insert( pieces, v.name )
+	end
+	local _, cur_piece_index = UI.ListBox( "pieces", 12, 27, pieces, 1 )
+	UI.SameLine()
+	UI.Button( "Add piece", 300 )
+	UI.SameColumn()
+	UI.Button( "Delete piece", 300 )
+
+	if UI.Button( "-" ) then
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note > 0 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note - 1
+		end
+	end
+
+	UI.SameLine()
+
+	if UI.Button( "+" ) then
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note < 127 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note + 1
+		end
+	end
+
+	UI.SameLine()
+	local changed = false
+	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Mapped note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
+
+	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
+	UI.End( pass )
+
+	ui_passes = UI.RenderFrame( pass )
+end
+
 function lovr.keypressed( key, scancode, repeating )
 	if key == "space" then
 		MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ 2 ].note, 127, 1 )
@@ -346,12 +386,12 @@ function App.Init()
 			table.insert( MIDI_ports, MIDI.getOutPortName( i ) )
 		end
 	end
-	-- Set default drum kit
-	table.insert( drum_kits, default_drum_kit )
 	-- Load models
 	mdl_stick = lovr.graphics.newModel( "devmeshes/stick.glb" )
-	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal3.glb" )
-	mdl_drum = lovr.graphics.newModel( "devmeshes/drum2.glb" )
+	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal5.glb" )
+	mdl_drum = lovr.graphics.newModel( "devmeshes/drum3.glb" )
+
+	LoadKits()
 
 	-- Setup colliders
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
@@ -378,22 +418,6 @@ function App.Init()
 
 	world:disableCollisionBetween( "stickL", "stickR" )
 	world:disableCollisionBetween( "drums", "drums" )
-
-	-- local f = io.open( "testfile.txt", "wb" )
-	-- local t = {}
-	-- for i, v in ipairs( default_drum_kit ) do
-	-- 	local inner = {}
-	-- 	table.insert( inner, v.type )
-	-- 	table.insert( inner, v.name )
-	-- 	table.insert( inner, v.note )
-	-- 	local x, y, z, sx, sy, sz, angle, ax, ay, az = v.pose:unpack()
-	-- 	local p = { x, y, z, sx, sy, sz, angle, ax, ay, az }
-	-- 	table.insert( inner, p )
-	-- 	table.insert( t, inner )
-	-- end
-	-- local out = Json.encode( t )
-	-- f:write( out )
-	-- io.close( f )
 end
 
 function App.Update( dt )
@@ -452,7 +476,7 @@ function App.Update( dt )
 						drag_table = {}
 						for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 							local m = lovr.math.newMat4()
-							m:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][i ].pose )
+							m:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ i ].pose )
 							table.insert( drag_table, m )
 						end
 					end
@@ -471,7 +495,7 @@ function App.Update( dt )
 
 		if moved_piece ~= nil then
 			for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-				drum_kits[ cur_drum_kit_index ][ i ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_table[i] )
+				drum_kits[ cur_drum_kit_index ][ i ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_table[ i ] )
 				drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
 					quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 			end
