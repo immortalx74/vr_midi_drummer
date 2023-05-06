@@ -16,15 +16,36 @@ local e_drum_kit_piece_type = {
 	cymbal = 5,
 }
 
-local common_sizes = {
-	snare = { { 14, 5 }, { 14, 6 }, { 14, 7 } },         -- 14x5 = [0.3556, 0.127]
-	kick = { { 20, 15 }, { 22, 16 }, { 22, 17 } },       -- 22x16 = [0.5588, 0.4064]
-	tom = { { 10, 8 }, { 12, 9 }, { 14, 10 }, { 16, 14 } }, -- All [0.254, 0.2032], [0.3048, 0.2286], [0.3556, 0.254], [0.4064, 0.3556]
-	hihat = { 13, 14, 15 },                              -- 14 = [0.3556]
-	cymbal = { 14, 18, 19, 21 },                         -- CrashL 18, CrashR 19, Ride 21 = [0.4572, 0.4826, 0.5334]
+-- local common_sizes = {
+-- 	snare = { { 14, 5 }, { 14, 6 }, { 14, 7 } },         -- 14x5 = [0.3556, 0.127]
+-- 	kick = { { 20, 15 }, { 22, 16 }, { 22, 17 } },       -- 22x16 = [0.5588, 0.4064]
+-- 	tom = { { 10, 8 }, { 12, 9 }, { 14, 10 }, { 16, 14 } }, -- All [0.254, 0.2032], [0.3048, 0.2286], [0.3556, 0.254], [0.4064, 0.3556]
+-- 	hihat = { 13, 14, 15 },                              -- 14 = [0.3556]
+-- 	cymbal = { 14, 18, 19, 21 },                         -- CrashL 18, CrashR 19, Ride 21 = [0.4572, 0.4826, 0.5334]
+-- }
+
+local available_pieces = {
+	{ "Snare 14 X 5", 0.3556, 0.127,  1 },
+	{ "Snare 14 X 6", 0.3556, 0.1524, 1 },
+	{ "Snare 14 X 7", 0.3556, 0.1778, 1 },
+	{ "Kick 20 X 15", 0.508,  0.381,  2 },
+	{ "Kick 22 X 16", 0.5588, 0.4064, 2 },
+	{ "Kick 22 X 17", 0.5588, 0.4318, 2 },
+	{ "Tom 10 X 8",   0.254,  0.2032, 3 },
+	{ "Tom 12 X 9",   0.3048, 0.2286, 3 },
+	{ "Tom 14 X 10",  0.3556, 0.254,  3 },
+	{ "Tom 16 X 14",  0.4064, 0.3556, 3 },
+	{ "Hihat 13",     0.3302, 0,      4 },
+	{ "Hihat 14",     0.3556, 0,      4 },
+	{ "Hihat 15",     0.381,  0,      4 },
+	{ "Cymbal 14",    0.3556, 0,      5 },
+	{ "Cymbal 18",    0.4572, 0,      5 },
+	{ "Cymbal 19",    0.4826, 0,      5 },
+	{ "Cymbal 21",    0.5334, 0,      5 },
 }
 
 local keybind_window_open = false
+local add_piece_window_open = false
 local key_pressed = nil
 local drag_table = {}
 local moved_piece = nil
@@ -50,7 +71,7 @@ local default_drum_kit = {
 	{
 		type = e_drum_kit_piece_type.snare,
 		pose = lovr.math.newMat4( vec3( 0, 0.78, -0.5 ), vec3( 0.3556, 0.127, 0.3556 ), quat() ),
-		name = "Snare 14 X 15",
+		name = "Snare 14 X 5",
 		collider = nil,
 		note = 38
 	},
@@ -167,6 +188,7 @@ local function SetEnvironment( pass )
 	-- pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0 )
 	-- pass:setColor( .2, .2, .2 )
 	-- pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0, 'line', 50, 50 )
+	lovr.graphics.setBackgroundColor( 1, 1, 1 )
 	pass:setColor( 1, 1, 1 )
 	pass:skybox( cube )
 end
@@ -228,12 +250,17 @@ local function UpdateSticksVelocity()
 end
 
 local function SetupDrumColliders()
+	for i, v in ipairs( drum_kits ) do
+		for j, k in ipairs( drum_kits[ i ] ) do
+			if drum_kits[ i ][ j ].collider then
+				drum_kits[ i ][ j ].collider:destroy()
+				drum_kits[ i ][ j ].collider = nil
+			end
+		end
+	end
+
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		local x, y, z, sx, sy, sz = v.pose:unpack()
-
-		if v.collider ~= nil then
-			v.collider:destroy()
-		end
 
 		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
 			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.1 )
@@ -267,7 +294,7 @@ local function DrawSticks( pass )
 
 	local pose = mat4( pos, vec3( 0.43, 0.43, sticks.length ), ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, sticks.pivot_offset / sticks.length )
 	pass:draw( mdl_stick, pose )
-	pass:box( pos, vec3( 0.03 ), ori )
+	-- pass:box( pos, vec3( 0.03 ), ori )
 
 	local pos = vec3( lovr.headset.getPosition( "hand/left" ) )
 	local ori = quat( lovr.headset.getOrientation( "hand/left" ) )
@@ -277,7 +304,7 @@ local function DrawSticks( pass )
 end
 
 local function LoadKits()
-	local str = ReadFileToSTring( "kitout.txt" )
+	local str = ReadFileToSTring( "kits.json" )
 	local decoded = Json.decode( str )
 	local kits = Json.decode( str )
 
@@ -302,7 +329,7 @@ local function LoadKits()
 end
 
 local function SaveKits()
-	local f = io.open( "kitout.txt", "wb" )
+	local f = io.open( "kits.json", "wb" )
 	local kits = {}
 	local num_kits = #drum_kits
 
@@ -374,7 +401,18 @@ local function DrawUI( pass )
 		AddKit()
 	end
 	UI.SameColumn()
-	UI.Button( "Delete kit", 300 )
+	if UI.Button( "Delete kit", 300 ) then
+		for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+			drum_kits[ cur_drum_kit_index ][i].collider:destroy()
+			-- table.remove( drum_kits[ cur_drum_kit_index ], i )
+			drum_kits[ cur_drum_kit_index ][i] = nil
+		end
+		drum_kits[ cur_drum_kit_index ] = nil
+		-- print(#drum_kits)
+		cur_drum_kit_index = 1
+		SetupDrumColliders()
+		return
+	end
 	UI.SameColumn()
 	if UI.Button( "Save all", 300 ) then
 		SaveKits()
@@ -385,11 +423,19 @@ local function DrawUI( pass )
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		table.insert( pieces, v.name )
 	end
-	local _, cur_piece_index = UI.ListBox( "pieces", 12, 27, pieces, 1 )
+	local changed, cur_piece_index = UI.ListBox( "pieces", 12, 27, pieces, 1 )
 	UI.SameLine()
-	UI.Button( "Add piece", 300 )
+	if UI.Button( "Add piece", 300 ) then
+		add_piece_window_open = true
+	end
 	UI.SameColumn()
-	UI.Button( "Delete piece", 300 )
+	if UI.Button( "Delete piece", 300 ) then
+		if #drum_kits[ cur_drum_kit_index ] > 1 then -- prevent deleting last piece
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].collider:destroy()
+			table.remove( drum_kits[ cur_drum_kit_index ], cur_piece_index )
+			return
+		end
+	end
 
 	if UI.Button( "-" ) then
 		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note > 0 then
@@ -419,6 +465,44 @@ local function DrawUI( pass )
 
 	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
 	UI.End( pass )
+
+	-- add piece window
+	if add_piece_window_open then
+		local m = mat4( setup_window_pose )
+		m:translate( 0, 0, 0.01 )
+		UI.Begin( "add_piece_window", m, true )
+		UI.Label( "Select piece" )
+
+		local pcs = {}
+		for i, v in ipairs( available_pieces ) do
+			local str = available_pieces[ i ][ 1 ]
+			table.insert( pcs, str )
+		end
+
+		local _, pc_idx = UI.ListBox( "availablepieceslst", 25, 27, pcs, 1 )
+		if UI.Button( "OK" ) then
+			local new_piece = {}
+			new_piece.name = available_pieces[ pc_idx ][ 1 ]
+			new_piece.note = 0
+			new_piece.type = available_pieces[ pc_idx ][ 4 ]
+			new_piece.keybind = ""
+			local sy = available_pieces[ pc_idx ][ 3 ]
+			if new_piece.type == e_drum_kit_piece_type.cymbal or new_piece.type == e_drum_kit_piece_type.hihat then
+				sy = 0.5
+			end
+			new_piece.pose = lovr.math.newMat4( vec3( 0, 0.7, -0.6 ), vec3( available_pieces[ pc_idx ][ 2 ], sy, available_pieces[ pc_idx ][ 3 ] ), quat() )
+			table.insert( drum_kits[ cur_drum_kit_index ], new_piece )
+			SetupDrumColliders()
+			add_piece_window_open = false
+			UI.EndModalWindow()
+		end
+		UI.SameLine()
+		if UI.Button( "Cancel" ) then
+			add_piece_window_open = false
+			UI.EndModalWindow()
+		end
+		UI.End( pass )
+	end
 
 	-- keybind window
 	if keybind_window_open then
@@ -484,6 +568,7 @@ function App.Init()
 	mdl_stick = lovr.graphics.newModel( "devmeshes/stick.glb" )
 	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal5.glb" )
 	mdl_drum = lovr.graphics.newModel( "devmeshes/drum3.glb" )
+	mdl_room = lovr.graphics.newModel( "devmeshes/room.glb" )
 
 	LoadKits()
 	SetupDrumColliders()
@@ -656,6 +741,8 @@ function App.RenderFrame( pass )
 
 	local m = mat4( sticks.left_tip, vec3( 0.03 ) )
 	-- pass:box( m )
+
+	pass:draw( mdl_room )
 
 	ShaderOff( pass )
 	if show_colliders then Phywire.draw( pass, world, Phywire.render_shapes ) end

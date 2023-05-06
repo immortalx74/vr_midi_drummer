@@ -1,14 +1,15 @@
 App = require "app"
 
 function lovr.load()
-	cube = lovr.graphics.newTexture( {
-		left = 'negx.jpg',
-		right = 'posx.jpg',
-		top = 'posy.jpg',
-		bottom = 'negy.jpg',
-		front = 'negz.jpg',
-		back = 'posz.jpg'
-	} )
+	-- cube = lovr.graphics.newTexture( {
+	-- 	left = 'negx.png',
+	-- 	right = 'posx.png',
+	-- 	top = 'posy.png',
+	-- 	bottom = 'negy.png',
+	-- 	front = 'negz.png',
+	-- 	back = 'posz.png'
+	-- } )
+	cube = lovr.graphics.newTexture("skybox1.png")
 	App.Init()
 end
 
