@@ -16,3 +16,7 @@
   
 
 ![vr_midi_drummer](https://i.imgur.com/nIPAb4m.png)
+
+**VR MIDI Drummer uses these libraries:**
+- [lovr-phywire](https://github.com/jmiskovic/lovr-phywire)
+- [json.lua](https://github.com/rxi/json.lua)
