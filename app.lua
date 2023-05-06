@@ -55,6 +55,7 @@ local cur_MIDI_port = 0
 local mode = e_mode.play
 local setup_window_pose = lovr.math.newMat4( vec3( -0.5, 1.5, -0.5 ), quat( 1, 0, 0, 0 ) )
 local show_colliders = true
+local skybox_tex = lovr.graphics.newTexture( "skybox1.png" )
 local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
 local shader = lovr.graphics.newShader( vs, fs )
@@ -184,33 +185,13 @@ local function ShaderOff( pass )
 end
 
 local function SetEnvironment( pass )
-	-- pass:setColor( .1, .1, .12 )
-	-- pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0 )
-	-- pass:setColor( .2, .2, .2 )
-	-- pass:plane( 0, 0, 0, 25, 25, -math.pi / 2, 1, 0, 0, 'line', 50, 50 )
 	lovr.graphics.setBackgroundColor( 1, 1, 1 )
 	pass:setColor( 1, 1, 1 )
-	pass:skybox( cube )
+	pass:skybox( skybox_tex )
 end
 
 local function MapRange( from_min, from_max, to_min, to_max, v )
 	return (v - from_min) * (to_max - to_min) / (from_max - from_min) + to_min
-end
-
-local function MoveDrumKit( axis, distance )
-	local dx = 0
-	local dy = 0
-	local dz = 0
-	if axis == e_axis.x then dx = distance end
-	if axis == e_axis.y then dy = distance end
-	if axis == e_axis.z then dz = distance end
-
-	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
-		drum_kits[ cur_drum_kit_index ][ i ].pose[ 1 ] = drum_kits[ cur_drum_kit_index ][ i ].pose[ 1 ] + dy
-		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
-		drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( x, y, z ), quat( angle, ax, ay, az ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
-	end
 end
 
 local function UpdateSticksColliders()
@@ -294,7 +275,6 @@ local function DrawSticks( pass )
 
 	local pose = mat4( pos, vec3( 0.43, 0.43, sticks.length ), ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, sticks.pivot_offset / sticks.length )
 	pass:draw( mdl_stick, pose )
-	-- pass:box( pos, vec3( 0.03 ), ori )
 
 	local pos = vec3( lovr.headset.getPosition( "hand/left" ) )
 	local ori = quat( lovr.headset.getOrientation( "hand/left" ) )
@@ -403,12 +383,10 @@ local function DrawUI( pass )
 	UI.SameColumn()
 	if UI.Button( "Delete kit", 300 ) then
 		for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-			drum_kits[ cur_drum_kit_index ][i].collider:destroy()
-			-- table.remove( drum_kits[ cur_drum_kit_index ], i )
-			drum_kits[ cur_drum_kit_index ][i] = nil
+			drum_kits[ cur_drum_kit_index ][ i ].collider:destroy()
+			drum_kits[ cur_drum_kit_index ][ i ] = nil
 		end
 		drum_kits[ cur_drum_kit_index ] = nil
-		-- print(#drum_kits)
 		cur_drum_kit_index = 1
 		SetupDrumColliders()
 		return
@@ -738,10 +716,6 @@ function App.RenderFrame( pass )
 	ShaderOn( pass )
 	DrawDrumKit( pass )
 	DrawSticks( pass )
-
-	local m = mat4( sticks.left_tip, vec3( 0.03 ) )
-	-- pass:box( m )
-
 	pass:draw( mdl_room )
 
 	ShaderOff( pass )
