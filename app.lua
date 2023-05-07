@@ -16,14 +16,6 @@ local e_drum_kit_piece_type = {
 	cymbal = 5,
 }
 
--- local common_sizes = {
--- 	snare = { { 14, 5 }, { 14, 6 }, { 14, 7 } },         -- 14x5 = [0.3556, 0.127]
--- 	kick = { { 20, 15 }, { 22, 16 }, { 22, 17 } },       -- 22x16 = [0.5588, 0.4064]
--- 	tom = { { 10, 8 }, { 12, 9 }, { 14, 10 }, { 16, 14 } }, -- All [0.254, 0.2032], [0.3048, 0.2286], [0.3556, 0.254], [0.4064, 0.3556]
--- 	hihat = { 13, 14, 15 },                              -- 14 = [0.3556]
--- 	cymbal = { 14, 18, 19, 21 },                         -- CrashL 18, CrashR 19, Ride 21 = [0.4572, 0.4826, 0.5334]
--- }
-
 local available_pieces = {
 	{ "Snare 14 X 5", 0.3556, 0.127,  1 },
 	{ "Snare 14 X 6", 0.3556, 0.1524, 1 },
@@ -54,8 +46,8 @@ local MIDI_ports = {}
 local cur_MIDI_port = 0
 local mode = e_mode.play
 local setup_window_pose = lovr.math.newMat4( vec3( -0.5, 1.5, -0.5 ), quat( 1, 0, 0, 0 ) )
-local show_colliders = true
-local skybox_tex = lovr.graphics.newTexture( "skybox1.png" )
+local show_colliders = false
+local skybox_tex = lovr.graphics.newTexture( "skybox3.hdr", { mipmaps = false } )
 local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
 local shader = lovr.graphics.newShader( vs, fs )
@@ -170,9 +162,10 @@ end
 
 local function ShaderOn( pass )
 	pass:setShader( shader )
-	local lightPos = vec3( -3, 6.0, -1.0 )
+	-- local lightPos = vec3( -3, 6.0, -1.0 )
+	local lightPos = vec3( 0, 2.5, -1.2 )
 	pass:setColor( 1, 1, 1 )
-	pass:box( lightPos )
+	-- pass:box( lightPos )
 	pass:send( 'ambience', { 0.05, 0.05, 0.05, 1.0 } )
 	pass:send( 'lightColor', { 1.0, 1.0, 1.0, 1.0 } )
 	pass:send( 'lightPos', lightPos )
@@ -186,6 +179,7 @@ end
 
 local function SetEnvironment( pass )
 	lovr.graphics.setBackgroundColor( 1, 1, 1 )
+	ShaderOff( pass )
 	pass:setColor( 1, 1, 1 )
 	pass:skybox( skybox_tex )
 end
@@ -544,8 +538,8 @@ function App.Init()
 	end
 	-- Load models
 	mdl_stick = lovr.graphics.newModel( "devmeshes/stick.glb" )
-	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal5.glb" )
-	mdl_drum = lovr.graphics.newModel( "devmeshes/drum3.glb" )
+	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal.glb" )
+	mdl_drum = lovr.graphics.newModel( "devmeshes/drum.glb" )
 	mdl_room = lovr.graphics.newModel( "devmeshes/room.glb" )
 
 	LoadKits()
