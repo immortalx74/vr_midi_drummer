@@ -254,13 +254,20 @@ end
 
 local function DrawDrumKit( pass )
 	local cur_kit = drum_kits[ cur_drum_kit_index ]
+
 	for i, v in ipairs( cur_kit ) do
+		if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
+			pass:setColor( 1, 0.6, 0.6 )
+		else
+			pass:setColor( 1, 1, 1 )
+		end
 		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
 			pass:draw( mdl_cymbal, v.pose )
 		else
 			pass:draw( mdl_drum, v.pose )
 		end
 	end
+	pass:setColor( 1, 1, 1 )
 end
 
 local function DrawSticks( pass )
@@ -676,6 +683,8 @@ function App.Update( dt )
 		if sticks.left_colliding_drum ~= nil then
 			if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
 				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note, sticks.left_vel, 1 )
+				local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
+				lovr.headset.vibrate( "hand/left", strength, 0.1 )
 				sticks.left_colliding_drum_prev = sticks.left_colliding_drum
 				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note
 				if sticks.left_vel > 0 then event_info.velocity = sticks.left_vel end
@@ -685,6 +694,8 @@ function App.Update( dt )
 		if sticks.right_colliding_drum ~= nil then
 			if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
 				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note, sticks.right_vel, 1 )
+				local strength = MapRange( 0, 127, 0, 1, sticks.right_vel )
+				lovr.headset.vibrate( "hand/right", strength, 0.1 )
 				sticks.right_colliding_drum_prev = sticks.right_colliding_drum
 				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note
 				if sticks.right_vel > 0 then event_info.velocity = sticks.right_vel end
