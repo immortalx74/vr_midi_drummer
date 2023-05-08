@@ -36,6 +36,8 @@ local available_pieces = {
 	{ "Cymbal 21",    0.5334, 0,      5 },
 }
 
+local enable_haptics = true
+local enable_hit_highlight = true
 local keybind_window_open = false
 local add_piece_window_open = false
 local key_pressed = nil
@@ -52,7 +54,7 @@ local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
 local shader = lovr.graphics.newShader( vs, fs )
 local world = lovr.physics.newWorld( 0, 0, 0, false, { "drums", "stickL", "stickR" } )
-local mdl_stick, mdl_cymbal, mdl_drum
+local mdl_stick, mdl_cymbal, mdl_drum, mdl_drum_highlight, mdl_cymbal_highlight
 local cur_piece_index = 1
 local cur_drum_kit_index = 1
 local event_info = { note = 0, velocity = 0 }
@@ -256,15 +258,31 @@ local function DrawDrumKit( pass )
 	local cur_kit = drum_kits[ cur_drum_kit_index ]
 
 	for i, v in ipairs( cur_kit ) do
-		if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
-			pass:setColor( 1, 0.6, 0.6 )
-		else
-			pass:setColor( 1, 1, 1 )
-		end
+		-- if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
+		-- 	pass:setColor( 1, 0.6, 0.6 )
+		-- else
+		-- 	pass:setColor( 1, 1, 1 )
+		-- end
 		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
 			pass:draw( mdl_cymbal, v.pose )
+			if enable_hit_highlight then
+				if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
+					local m = mat4( v.pose ):translate( 0, 0.001, 0 )
+					pass:setColor( 1, 0.9, 0.9 )
+					pass:draw( mdl_cymbal_highlight, m )
+					pass:setColor( 1, 1, 1 )
+				end
+			end
 		else
 			pass:draw( mdl_drum, v.pose )
+			if enable_hit_highlight then
+				if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
+					local m = mat4( v.pose ):translate( 0, 0.001, 0 )
+					pass:setColor( 1, 0.9, 0.9 )
+					pass:draw( mdl_drum_highlight, m )
+					pass:setColor( 1, 1, 1 )
+				end
+			end
 		end
 	end
 	pass:setColor( 1, 1, 1 )
@@ -443,6 +461,8 @@ local function DrawUI( pass )
 	end
 
 	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
+	if UI.CheckBox( "Enable haptics", enable_haptics ) then enable_haptics = not enable_haptics end
+	if UI.CheckBox( "Enable hit highlight", enable_hit_highlight ) then enable_hit_highlight = not enable_hit_highlight end
 	UI.End( pass )
 
 	-- add piece window
@@ -548,6 +568,8 @@ function App.Init()
 	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal.glb" )
 	mdl_drum = lovr.graphics.newModel( "devmeshes/drum.glb" )
 	mdl_room = lovr.graphics.newModel( "devmeshes/room.glb" )
+	mdl_drum_highlight = lovr.graphics.newModel( "devmeshes/drum_highlight.glb" )
+	mdl_cymbal_highlight = lovr.graphics.newModel( "devmeshes/cymbal_highlight.glb" )
 
 	LoadKits()
 	SetupDrumColliders()
@@ -683,8 +705,10 @@ function App.Update( dt )
 		if sticks.left_colliding_drum ~= nil then
 			if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
 				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note, sticks.left_vel, 1 )
-				local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
-				lovr.headset.vibrate( "hand/left", strength, 0.1 )
+				if enable_haptics then
+					local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
+					lovr.headset.vibrate( "hand/left", strength, 0.1 )
+				end
 				sticks.left_colliding_drum_prev = sticks.left_colliding_drum
 				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note
 				if sticks.left_vel > 0 then event_info.velocity = sticks.left_vel end
@@ -694,8 +718,10 @@ function App.Update( dt )
 		if sticks.right_colliding_drum ~= nil then
 			if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
 				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note, sticks.right_vel, 1 )
-				local strength = MapRange( 0, 127, 0, 1, sticks.right_vel )
-				lovr.headset.vibrate( "hand/right", strength, 0.1 )
+				if enable_haptics then
+					local strength = MapRange( 0, 127, 0, 1, sticks.right_vel )
+					lovr.headset.vibrate( "hand/right", strength, 0.1 )
+				end
 				sticks.right_colliding_drum_prev = sticks.right_colliding_drum
 				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note
 				if sticks.right_vel > 0 then event_info.velocity = sticks.right_vel end
