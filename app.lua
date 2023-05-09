@@ -156,10 +156,12 @@ local sticks = {
 }
 
 local function ReadFileToSTring( filename )
-	local f = assert( io.open( filename, "rb" ) )
-	local str = f:read( "*all" )
-	f:close()
-	return str
+	-- local f = assert( io.open( filename, "rb" ) )
+	-- local str = f:read( "*all" )
+	-- f:close()
+	-- return str
+	local contents, bytes = lovr.filesystem.read(filename, -1)
+	return contents
 end
 
 local function ShaderOn( pass )
