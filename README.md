@@ -15,7 +15,7 @@
 - Setup your DAW to accept input from the same MIDI port as the one selected in the app
   
 
-NOTE: If you run the app from source you'll need `luamidi.dll` on the same path as `lovr.exe`. Get it from the releases (inside the released app archive)
+NOTE: If you run the app from source you'll need `luamidi.dll` and `lua51.dll` on the same path as `lovr.exe`. Get it from the releases (inside the released app archive)
 
 ![vr_midi_drummer](https://i.imgur.com/P9vXdjh.png)
 
