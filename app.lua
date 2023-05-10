@@ -53,7 +53,7 @@ local skybox_tex = lovr.graphics.newTexture( "skybox3.hdr", { mipmaps = false } 
 local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
 local shader = lovr.graphics.newShader( vs, fs )
-local world = lovr.physics.newWorld( 0, 0, 0, false, { "drums", "stickL", "stickR" } )
+local world = lovr.physics.newWorld( 0, 0, 0, false, { "drums", "stickL", "stickR", "drums_inner" } )
 local mdl_stick, mdl_cymbal, mdl_drum, mdl_drum_highlight, mdl_cymbal_highlight
 local cur_piece_index = 1
 local cur_drum_kit_index = 1
@@ -156,15 +156,13 @@ local sticks = {
 }
 
 local function ReadFileToSTring( filename )
-	-- local f = assert( io.open( filename, "rb" ) )
-	-- local str = f:read( "*all" )
-	-- f:close()
-	-- return str
-	-- local path = lovr.filesystem.getExecutablePath()
-	-- local path = "D:\\dev\\lovr\\"
-	-- print(path .. filename)
-	local contents, bytes = lovr.filesystem.read( filename, -1 )
-	return contents
+	local f = assert( io.open( filename, "rb" ) )
+	local str = f:read( "*all" )
+	f:close()
+	return str
+
+	-- local contents, bytes = lovr.filesystem.read( filename, -1 )
+	-- return contents
 end
 
 local function ShaderOn( pass )
@@ -237,6 +235,8 @@ local function SetupDrumColliders()
 			if drum_kits[ i ][ j ].collider then
 				drum_kits[ i ][ j ].collider:destroy()
 				drum_kits[ i ][ j ].collider = nil
+				drum_kits[ i ][ j ].collider_inner:destroy()
+				drum_kits[ i ][ j ].collider_inner = nil
 			end
 		end
 	end
@@ -246,16 +246,23 @@ local function SetupDrumColliders()
 
 		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
 			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.1 )
+			v.collider_inner = world:newCylinderCollider( 0, 0, 0, sx / 8, 0.1 )
 		else
 			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, sy )
+			v.collider_inner = world:newCylinderCollider( 0, 0, 0, sx / 2.6, sy )
 		end
 
 		local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ cur_drum_kit_index ][ i ].pose:unpack()
 		drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ), quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
+		drum_kits[ cur_drum_kit_index ][ i ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
+			quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 
 		v.collider:setKinematic( true )
 		v.collider:setTag( "drums" )
 		v.collider:setUserData( i )
+		v.collider_inner:setKinematic( true )
+		v.collider_inner:setTag( "drums_inner" )
+		v.collider_inner:setUserData( i )
 	end
 end
 
@@ -308,7 +315,6 @@ local function DrawSticks( pass )
 end
 
 local function LoadKits()
-	print( lovr.filesystem.getWorkingDirectory() .. "\\" .. "kits.json" )
 	local str = ReadFileToSTring( "kits.json" )
 	local decoded = Json.decode( str )
 	local kits = Json.decode( str )
@@ -322,7 +328,7 @@ local function LoadKits()
 		for j = 1, num_pieces do
 			local cur_piece = {}
 			cur_piece.name = kits[ i ][ "kitpieces" ][ j ][ "name" ]
-			cur_piece.note = kits[ i ][ "kitpieces" ][ j ][ "note" ]
+			cur_piece.note = { kits[ i ][ "kitpieces" ][ j ][ "note" ][ 1 ], kits[ i ][ "kitpieces" ][ j ][ "note" ][ 2 ] }
 			cur_piece.type = kits[ i ][ "kitpieces" ][ j ][ "type" ]
 			cur_piece.keybind = kits[ i ][ "kitpieces" ][ j ][ "keybind" ]
 			local f = kits[ i ][ "kitpieces" ][ j ][ "pose" ]
@@ -334,7 +340,7 @@ local function LoadKits()
 end
 
 local function SaveKits()
-	-- local f = io.open( "kits.json", "wb" )
+	local f = io.open( "kits.json", "wb" )
 	local kits = {}
 	local num_kits = #drum_kits
 
@@ -346,7 +352,7 @@ local function SaveKits()
 		for j = 1, num_pieces do
 			local cur_piece = {}
 			cur_piece[ "name" ] = drum_kits[ i ][ j ].name
-			cur_piece[ "note" ] = drum_kits[ i ][ j ].note
+			cur_piece[ "note" ] = { drum_kits[ i ][ j ].note[ 1 ], drum_kits[ i ][ j ].note[ 2 ] }
 			cur_piece[ "type" ] = drum_kits[ i ][ j ].type
 			cur_piece[ "keybind" ] = drum_kits[ i ][ j ].keybind
 			local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ i ][ j ].pose:unpack()
@@ -358,9 +364,9 @@ local function SaveKits()
 	end
 
 	local out = Json.encode( kits )
-	-- f:write( out )
-	-- io.close( f )
-	lovr.filesystem.write( "kits.json", out )
+	f:write( out )
+	io.close( f )
+	-- lovr.filesystem.write( "kits.json", out )
 end
 
 local function AddKit()
@@ -442,22 +448,41 @@ local function DrawUI( pass )
 	end
 
 	if UI.Button( "-" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note > 0 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note - 1
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] > 0 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] - 1
 		end
 	end
 
 	UI.SameLine()
 
 	if UI.Button( "+" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note < 127 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note + 1
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] < 127 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] + 1
 		end
 	end
 
 	UI.SameLine()
 	local changed
-	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note = UI.SliderInt( "Note", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note, 0, 127 )
+	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] = UI.SliderInt( "Note inner", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ], 0, 127 )
+	
+
+	if UI.Button( "-" ) then
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] > 0 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] - 1
+		end
+	end
+
+	UI.SameLine()
+
+	if UI.Button( "+" ) then
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] < 127 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] + 1
+		end
+	end
+
+	UI.SameLine()
+	local changed
+	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] = UI.SliderInt( "Note outer", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ], 0, 127 )
 	local cur_bind = "-- none --"
 	if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind ~= "" then
 		cur_bind = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind
@@ -551,7 +576,7 @@ function lovr.keypressed( key, scancode, repeating )
 		local pieces = drum_kits[ cur_drum_kit_index ]
 		for i, v in ipairs( pieces ) do
 			if key == pieces[ i ].keybind then
-				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note, 127, 1 )
+				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 127, 1 )
 				break
 			end
 		end
@@ -559,6 +584,7 @@ function lovr.keypressed( key, scancode, repeating )
 end
 
 function App.Init()
+	lovr.filesystem.mount( lovr.filesystem.getExecutablePath():gsub( '[^/]+$', '/' ) )
 	UI.Init()
 
 	-- Setup MIDI ports
@@ -571,12 +597,12 @@ function App.Init()
 		end
 	end
 	-- Load models
-	mdl_stick = lovr.graphics.newModel( "devmeshes/stick.glb" )
-	mdl_cymbal = lovr.graphics.newModel( "devmeshes/cymbal.glb" )
-	mdl_drum = lovr.graphics.newModel( "devmeshes/drum.glb" )
-	mdl_room = lovr.graphics.newModel( "devmeshes/room.glb" )
-	mdl_drum_highlight = lovr.graphics.newModel( "devmeshes/drum_highlight.glb" )
-	mdl_cymbal_highlight = lovr.graphics.newModel( "devmeshes/cymbal_highlight.glb" )
+	mdl_stick = lovr.graphics.newModel( "res/stick.glb" )
+	mdl_cymbal = lovr.graphics.newModel( "res/cymbal.glb" )
+	mdl_drum = lovr.graphics.newModel( "res/drum.glb" )
+	mdl_room = lovr.graphics.newModel( "res/room.glb" )
+	mdl_drum_highlight = lovr.graphics.newModel( "res/drum_highlight.glb" )
+	mdl_cymbal_highlight = lovr.graphics.newModel( "res/cymbal_highlight.glb" )
 
 	LoadKits()
 	SetupDrumColliders()
@@ -590,6 +616,8 @@ function App.Init()
 
 	world:disableCollisionBetween( "stickL", "stickR" )
 	world:disableCollisionBetween( "drums", "drums" )
+	world:disableCollisionBetween( "drums_inner", "drums_inner" )
+	world:disableCollisionBetween( "drums", "drums_inner" )
 end
 
 function App.Update( dt )
@@ -635,6 +663,8 @@ function App.Update( dt )
 			drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_offset )
 			drum_kits[ cur_drum_kit_index ][ dragged_piece ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ),
 				quat( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
+				drum_kits[ cur_drum_kit_index ][ dragged_piece ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ),
+				quat( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 		end
 	end
 
@@ -670,6 +700,8 @@ function App.Update( dt )
 				drum_kits[ cur_drum_kit_index ][ i ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_table[ i ] )
 				drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
 					quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
+					drum_kits[ cur_drum_kit_index ][ i ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
+					quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 			end
 		end
 	end
@@ -677,6 +709,8 @@ function App.Update( dt )
 	if mode == e_mode.play then
 		local L_col_this_frame = false
 		local R_col_this_frame = false
+		local L_inner_col_this_frame = false
+		local R_inner_col_this_frame = false
 
 		for shapeA, shapeB in world:overlaps() do
 			local are_colliding = world:collide( shapeA, shapeB )
@@ -709,28 +743,56 @@ function App.Update( dt )
 			end
 		end
 
+		-- 2nd overlap test
+		world:computeOverlaps()
+		for shapeA, shapeB in world:overlaps() do
+			local are_colliding = world:collide( shapeA, shapeB )
+			if are_colliding then
+				if sticks.left_colliding_drum ~= nil then
+					if shapeA:getCollider():getTag() == "drums_inner" and shapeB:getCollider():getTag() == "stickL" then
+						L_inner_col_this_frame = true
+					end
+					if shapeB:getCollider():getTag() == "drums_inner" and shapeA:getCollider():getTag() == "stickL" then
+						L_inner_col_this_frame = true
+					end
+				end
+				if sticks.right_colliding_drum ~= nil then
+					if shapeA:getCollider():getTag() == "drums_inner" and shapeB:getCollider():getTag() == "stickR" then
+						R_inner_col_this_frame = true
+					end
+					if shapeB:getCollider():getTag() == "drums_inner" and shapeA:getCollider():getTag() == "stickR" then
+						R_inner_col_this_frame = true
+					end
+				end
+			end
+		end
+
 		if sticks.left_colliding_drum ~= nil then
 			if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
-				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note, sticks.left_vel, 1 )
+				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 2 ]
+				if L_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 1 ] end
+				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.left_vel, 1 )
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
 					lovr.headset.vibrate( "hand/left", strength, 0.1 )
 				end
 				sticks.left_colliding_drum_prev = sticks.left_colliding_drum
-				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note
+				event_info.note = triggered_note
 				if sticks.left_vel > 0 then event_info.velocity = sticks.left_vel end
 			end
 		end
 
 		if sticks.right_colliding_drum ~= nil then
 			if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
-				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note, sticks.right_vel, 1 )
+				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 2 ]
+				if R_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 1 ] end
+				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.right_vel, 1 )
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.right_vel )
 					lovr.headset.vibrate( "hand/right", strength, 0.1 )
 				end
 				sticks.right_colliding_drum_prev = sticks.right_colliding_drum
-				event_info.note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note
+				event_info.note = triggered_note
 				if sticks.right_vel > 0 then event_info.velocity = sticks.right_vel end
 			end
 		end
