@@ -15,7 +15,7 @@
 - Setup your DAW to accept input from the same MIDI port as the one selected in the app
   
 
-![vr_midi_drummer](https://i.imgur.com/VbWKIWt.png)
+![vr_midi_drummer](https://i.imgur.com/P9vXdjh.png)
 
 **VR MIDI Drummer uses these libraries:**
 - [lovr-phywire](https://github.com/jmiskovic/lovr-phywire)
