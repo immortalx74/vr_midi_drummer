@@ -32,7 +32,7 @@ NOTE: If you run the app from source you'll need `luamidi.dll` and `lua51.dll` o
 - You should now be able to hear the drum sounds
 - If you own a USB footpedal you can set it up to trigger a keyboard key by using [JoyToKey](https://joytokey.net/en/download) or a similar utility
 - By default the kick is mapped to the `Space` key. You can change this mapping by selecting the kick piece in the floating window and clicking on the `Assign key...` button
-- Hihat open/close isn't implemented for the time being
+- Similarly, the hihat open/closed is mapped to the `h` key by default
 
 ![vr_midi_drummer](https://i.imgur.com/P9vXdjh.png)
 
