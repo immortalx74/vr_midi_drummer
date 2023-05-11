@@ -641,6 +641,12 @@ function App.Init()
 end
 
 function App.Update( dt )
+	if lovr.headset.wasPressed( "hand/left", "y" ) then
+		MIDI.sendMessage( cur_MIDI_port, 193, 1, 0 )
+	end
+	if lovr.headset.wasPressed( "hand/left", "x" ) then
+		MIDI.sendMessage( cur_MIDI_port, 193, 90, 0 )
+	end
 	UpdateNoteOffEvents()
 	UpdateSticksColliders()
 	UpdateSticksVelocity()
