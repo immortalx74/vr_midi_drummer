@@ -379,6 +379,7 @@ local function AddKit()
 		piece.note = v.note
 		piece.keybind = v.keybind
 		piece.collider = v.collider
+		piece.collider_inner = v.collider_inner
 		local x, y, z, sx, sy, sz, angle, ax, ay, az = v.pose:unpack()
 		piece.pose = lovr.math.newMat4( vec3( x, y, z ), vec3( sx, sy, sz ), quat( angle, ax, ay, az ) )
 		table.insert( new_kit, piece )
@@ -414,14 +415,19 @@ local function DrawUI( pass )
 	end
 	UI.SameColumn()
 	if UI.Button( "Delete kit", 300 ) then
-		for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-			drum_kits[ cur_drum_kit_index ][ i ].collider:destroy()
-			drum_kits[ cur_drum_kit_index ][ i ] = nil
+		if #drum_kits > 1 then
+			for i = #drum_kits[ cur_drum_kit_index ], 1, -1 do
+				drum_kits[ cur_drum_kit_index ][ i ].collider:destroy()
+				drum_kits[ cur_drum_kit_index ][ i ].collider_inner:destroy()
+				table.remove( drum_kits[ cur_drum_kit_index ], i )
+			end
+
+			drum_kits[ cur_drum_kit_index ].name = nil
+			table.remove( drum_kits, cur_drum_kit_index )
+			cur_drum_kit_index = 1
+			SetupDrumColliders()
+			return
 		end
-		drum_kits[ cur_drum_kit_index ] = nil
-		cur_drum_kit_index = 1
-		SetupDrumColliders()
-		return
 	end
 	UI.SameColumn()
 	if UI.Button( "Save all", 300 ) then
@@ -448,35 +454,35 @@ local function DrawUI( pass )
 	end
 
 	if UI.Button( "-" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] > 0 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] - 1
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] > 0 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] - 1
 		end
 	end
 
 	UI.SameLine()
 
 	if UI.Button( "+" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] < 127 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[1] + 1
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] < 127 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] + 1
 		end
 	end
 
 	UI.SameLine()
 	local changed
 	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ] = UI.SliderInt( "Note inner", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 1 ], 0, 127 )
-	
+
 
 	if UI.Button( "-" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] > 0 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] - 1
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] > 0 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] - 1
 		end
 	end
 
 	UI.SameLine()
 
 	if UI.Button( "+" ) then
-		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] < 127 then
-			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[2] + 1
+		if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] < 127 then
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] + 1
 		end
 	end
 
@@ -663,7 +669,7 @@ function App.Update( dt )
 			drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_offset )
 			drum_kits[ cur_drum_kit_index ][ dragged_piece ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ),
 				quat( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
-				drum_kits[ cur_drum_kit_index ][ dragged_piece ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ),
+			drum_kits[ cur_drum_kit_index ][ dragged_piece ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ),
 				quat( drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 		end
 	end
@@ -700,7 +706,7 @@ function App.Update( dt )
 				drum_kits[ cur_drum_kit_index ][ i ].pose:set( mat4( lovr.headset.getPose( "hand/right" ) ) * drag_table[ i ] )
 				drum_kits[ cur_drum_kit_index ][ i ].collider:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
 					quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
-					drum_kits[ cur_drum_kit_index ][ i ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
+				drum_kits[ cur_drum_kit_index ][ i ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
 					quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 			end
 		end
@@ -819,6 +825,8 @@ function App.RenderFrame( pass )
 	pass:draw( mdl_room )
 
 	ShaderOff( pass )
+	-- if show_colliders then Phywire.draw( pass, world, Phywire.render_shapes ) end
+	Phywire.render_shapes.show_contacts = true
 	if show_colliders then Phywire.draw( pass, world, Phywire.render_shapes ) end
 end
 
