@@ -36,6 +36,7 @@ local available_pieces = {
 	{ "Cymbal 21",    0.5334, 0,      5 },
 }
 
+local scheduled_off_notes = {}
 local enable_haptics = true
 local enable_hit_highlight = true
 local keybind_window_open = false
@@ -390,7 +391,6 @@ end
 local function DrawUI( pass )
 	UI.NewFrame( pass )
 	UI.Begin( "FirstWindow", setup_window_pose )
-
 	UI.Label( "Event: Note - " .. event_info.note .. ", Velocity - " .. event_info.velocity )
 
 	UI.Label( "MIDI ports", true )
@@ -573,6 +573,19 @@ local function DrawUI( pass )
 	ui_passes = UI.RenderFrame( pass )
 end
 
+local function UpdateNoteOffEvents()
+	for i, v in ipairs( scheduled_off_notes ) do
+		v[ 2 ] = v[ 2 ] + 1
+	end
+
+	for i = #scheduled_off_notes, 1, -1 do
+		if scheduled_off_notes[ i ][ 2 ] > 15 then
+			MIDI.noteOn( cur_MIDI_port, scheduled_off_notes[ i ][ 1 ], 0, 1 )
+			table.remove( scheduled_off_notes, i )
+		end
+	end
+end
+
 function lovr.keypressed( key, scancode, repeating )
 	if keybind_window_open then
 		if key then
@@ -583,6 +596,7 @@ function lovr.keypressed( key, scancode, repeating )
 		for i, v in ipairs( pieces ) do
 			if key == pieces[ i ].keybind then
 				MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 127, 1 )
+				table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 0 } )
 				break
 			end
 		end
@@ -627,6 +641,7 @@ function App.Init()
 end
 
 function App.Update( dt )
+	UpdateNoteOffEvents()
 	UpdateSticksColliders()
 	UpdateSticksVelocity()
 	world:update( dt )
@@ -778,6 +793,7 @@ function App.Update( dt )
 				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 2 ]
 				if L_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 1 ] end
 				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.left_vel, 1 )
+				table.insert( scheduled_off_notes, { triggered_note, 0 } )
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
 					lovr.headset.vibrate( "hand/left", strength, 0.1 )
@@ -793,6 +809,7 @@ function App.Update( dt )
 				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 2 ]
 				if R_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 1 ] end
 				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.right_vel, 1 )
+				table.insert( scheduled_off_notes, { triggered_note, 0 } )
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.right_vel )
 					lovr.headset.vibrate( "hand/right", strength, 0.1 )
