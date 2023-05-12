@@ -168,8 +168,8 @@ local function SetupDrumColliders()
 		local x, y, z, sx, sy, sz = v.pose:unpack()
 
 		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
-			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.1 )
-			v.collider_inner = world:newCylinderCollider( 0, 0, 0, sx / 8, 0.1 )
+			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.08 )
+			v.collider_inner = world:newCylinderCollider( 0, 0, 0, sx / 8, 0.08 )
 		else
 			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, sy )
 			v.collider_inner = world:newCylinderCollider( 0, 0, 0, sx / 2.6, sy )
@@ -193,11 +193,28 @@ local function DrawDrumKit( pass )
 	local cur_kit = drum_kits[ cur_drum_kit_index ]
 
 	for i, v in ipairs( cur_kit ) do
-		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
+		if v.type == e_drum_kit_piece_type.cymbal then
 			pass:draw( mdl_cymbal, v.pose )
 			if enable_hit_highlight then
 				if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
 					local m = mat4( v.pose ):translate( 0, 0.001, 0 )
+					pass:setColor( 1, 0.9, 0.9 )
+					pass:draw( mdl_cymbal_highlight, m )
+					pass:setColor( 1, 1, 1 )
+				end
+			end
+		elseif v.type == e_drum_kit_piece_type.hihat then
+			local hihat_top_pose = mat4( v.pose )
+			if not hihat_closed then
+				hihat_top_pose:translate( 0, 0.02, 0 )
+			end
+			pass:draw( mdl_cymbal, hihat_top_pose )
+			local hihat_bottom_pose = mat4( v.pose ):rotate( math.pi, 1, 0, 0 )
+			pass:draw( mdl_cymbal, hihat_bottom_pose )
+
+			if enable_hit_highlight then
+				if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
+					local m = mat4( hihat_top_pose ):translate( 0, 0.001, 0 )
 					pass:setColor( 1, 0.9, 0.9 )
 					pass:draw( mdl_cymbal_highlight, m )
 					pass:setColor( 1, 1, 1 )
@@ -492,14 +509,18 @@ local function DrawUI( pass )
 		if UI.Button( "OK" ) then
 			local new_piece = {}
 			new_piece.name = available_pieces[ pc_idx ][ 1 ]
-			new_piece.note = 0
 			new_piece.type = available_pieces[ pc_idx ][ 4 ]
+			new_piece.note = { 0, 0 }
+			if new_piece.type == e_drum_kit_piece_type.hihat then
+				new_piece.note[ 3 ] = 0
+				new_piece.note[ 4 ] = 0
+			end
 			new_piece.keybind = ""
 			local sy = available_pieces[ pc_idx ][ 3 ]
 			if new_piece.type == e_drum_kit_piece_type.cymbal or new_piece.type == e_drum_kit_piece_type.hihat then
 				sy = 0.5
 			end
-			new_piece.pose = lovr.math.newMat4( vec3( 0, 0.7, -0.6 ), vec3( available_pieces[ pc_idx ][ 2 ], sy, available_pieces[ pc_idx ][ 3 ] ), quat() )
+			new_piece.pose = lovr.math.newMat4( vec3( 0, 0.7, -0.6 ), vec3( available_pieces[ pc_idx ][ 2 ], sy, available_pieces[ pc_idx ][ 2 ] ), quat() )
 			table.insert( drum_kits[ cur_drum_kit_index ], new_piece )
 			SetupDrumColliders()
 			add_piece_window_open = false
