@@ -36,6 +36,7 @@ local available_pieces = {
 	{ "Cymbal 21",    0.5334, 0,      5 },
 }
 
+local drum_kit_name = ""
 local hihat_closed = false
 local hihat_keybind = nil
 local scheduled_off_notes = {}
@@ -43,6 +44,7 @@ local enable_haptics = true
 local enable_hit_highlight = true
 local keybind_window_open = false
 local add_piece_window_open = false
+local rename_kit_window_open = false
 local key_pressed = nil
 local drag_table = {}
 local dragged_piece = nil
@@ -50,7 +52,7 @@ local drag_offset = lovr.math.newMat4()
 local MIDI_ports = {}
 local cur_MIDI_port = 0
 local mode = e_mode.play
-local setup_window_pose = lovr.math.newMat4( vec3( -0.5, 1.5, -0.5 ), quat( 1, 0, 0, 0 ) )
+local setup_window_pose = lovr.math.newMat4( vec3( -1, 1, -0.6 ), quat( math.pi / 4, 0, 1, 0 ) )
 local show_colliders = false
 local skybox_tex = lovr.graphics.newTexture( "skybox3.hdr", { mipmaps = false } )
 local vs = lovr.filesystem.read( "light.vs" )
@@ -117,15 +119,15 @@ local function MapRange( from_min, from_max, to_min, to_max, v )
 end
 
 local function UpdateSticksColliders()
-	local hand_poseL = mat4( vec3( lovr.headset.getPosition( "hand/left" ) ), vec3( 1, 1, 1 ), quat( lovr.headset.getOrientation( "hand/left" ) ) ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0,
-		-sticks.pivot_offset )
-	sticks.left_collider:setPosition( vec3( hand_poseL ) )
-	sticks.left_collider:setOrientation( quat( hand_poseL ) )
+	local pos = vec3( lovr.headset.getPosition( "hand/left" ) )
+	local ori = quat( lovr.headset.getOrientation( "hand/left" ) )
+	local pose = mat4( pos, quat() ):rotate( ori:mul( quat( sticks.rotation, 1, 0, 0 ) ) ):scale( vec3( 0.43, 0.43, sticks.length ) ):translate( 0, 0, -0.5 + (sticks.pivot_offset / sticks.length) )
+	sticks.left_collider:setPose( vec3( pose ), quat( pose ) )
 
-	local hand_poseR = mat4( vec3( lovr.headset.getPosition( "hand/right" ) ), vec3( 1, 1, 1 ), quat( lovr.headset.getOrientation( "hand/right" ) ) ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0,
-		-sticks.pivot_offset )
-	sticks.right_collider:setPosition( vec3( hand_poseR ) )
-	sticks.right_collider:setOrientation( quat( hand_poseR ) )
+	local pos = vec3( lovr.headset.getPosition( "hand/right" ) )
+	local ori = quat( lovr.headset.getOrientation( "hand/right" ) )
+	local pose = mat4( pos, quat() ):rotate( ori:mul( quat( sticks.rotation, 1, 0, 0 ) ) ):scale( vec3( 0.43, 0.43, sticks.length ) ):translate( 0, 0, -0.5 + (sticks.pivot_offset / sticks.length) )
+	sticks.right_collider:setPose( vec3( pose ), quat( pose ) )
 end
 
 local function UpdateSticksVelocity()
@@ -238,14 +240,12 @@ end
 local function DrawSticks( pass )
 	local pos = vec3( lovr.headset.getPosition( "hand/left" ) )
 	local ori = quat( lovr.headset.getOrientation( "hand/left" ) )
-
-	local pose = mat4( pos, vec3( 0.43, 0.43, sticks.length ), ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, sticks.pivot_offset / sticks.length )
+	local pose = mat4( pos, quat() ):rotate( ori:mul( quat( sticks.rotation, 1, 0, 0 ) ) ):scale( vec3( 0.43, 0.43, sticks.length ) ):translate( 0, 0, sticks.pivot_offset / sticks.length )
 	pass:draw( mdl_stick, pose )
 
 	local pos = vec3( lovr.headset.getPosition( "hand/right" ) )
 	local ori = quat( lovr.headset.getOrientation( "hand/right" ) )
-
-	local pose = mat4( pos, vec3( 0.43, 0.43, sticks.length ), ori ):rotate( sticks.rotation, 1, 0, 0 ):translate( 0, 0, sticks.pivot_offset / sticks.length )
+	local pose = mat4( pos, quat() ):rotate( ori:mul( quat( sticks.rotation, 1, 0, 0 ) ) ):scale( vec3( 0.43, 0.43, sticks.length ) ):translate( 0, 0, sticks.pivot_offset / sticks.length )
 	pass:draw( mdl_stick, pose )
 end
 
@@ -349,7 +349,7 @@ local function DrawUI( pass )
 		table.insert( dkits, v.name )
 	end
 
-	local changed, idx = UI.ListBox( "kits", 6, 27, dkits, 1 )
+	local changed, idx = UI.ListBox( "kits", 9, 27, dkits, 1 )
 	if changed then
 		cur_drum_kit_index = idx
 		cur_piece_index = 1
@@ -375,6 +375,11 @@ local function DrawUI( pass )
 			return
 		end
 	end
+	UI.SameColumn()
+	if UI.Button( "Rename kit", 300 ) then
+		rename_kit_window_open = true
+	end
+
 	UI.SameColumn()
 	if UI.Button( "Save all", 300 ) then
 		SaveKits()
@@ -482,14 +487,34 @@ local function DrawUI( pass )
 		cur_bind = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind
 	end
 
-	UI.Label( "Current Keybind: " .. cur_bind )
 	if UI.Button( "Assign key..." ) then
 		keybind_window_open = true
 	end
+	UI.SameLine()
+	UI.Label( "Current Keybind: " .. cur_bind )
+
+	UI.Dummy( 0, 20 )
+	UI.Separator()
+	UI.Dummy( 0, 20 )
 
 	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
 	if UI.CheckBox( "Enable haptics", enable_haptics ) then enable_haptics = not enable_haptics end
 	if UI.CheckBox( "Enable hit highlight", enable_hit_highlight ) then enable_hit_highlight = not enable_hit_highlight end
+
+	local released
+	released, sticks.pivot_offset = UI.SliderFloat( "Stick pivot", sticks.pivot_offset, 0, 0.3 )
+	released, sticks.length = UI.SliderFloat( "Stick length", sticks.length, 0.381, 0.4445 )
+	if released then
+		sticks.left_collider:destroy()
+		sticks.right_collider:destroy()
+		sticks.left_collider = world:newCylinderCollider( 0, 0, 0, 0.01, sticks.length )
+		sticks.left_collider:setKinematic( true )
+		sticks.left_collider:setTag( "stickL" )
+		sticks.right_collider = world:newCylinderCollider( 0, 0, 0, 0.01, sticks.length )
+		sticks.right_collider:setKinematic( true )
+		sticks.right_collider:setTag( "stickR" )
+	end
+	released, sticks.rotation = UI.SliderFloat( "Stick rotation", sticks.rotation, -1, 0.3 )
 	UI.End( pass )
 
 	-- add piece window
@@ -561,6 +586,38 @@ local function DrawUI( pass )
 			UI.EndModalWindow()
 		end
 		UI.End( pass )
+	end
+
+	-- rename kit window
+	if rename_kit_window_open then
+		local m = mat4( setup_window_pose )
+		m:translate( 0, 0, 0.01 )
+		UI.Begin( "rename_kit_window", m, true )
+		UI.Label( "Enter a new name for this kit" )
+
+		local old_name = drum_kits[ cur_drum_kit_index ].name
+		local got_focus, buffer_changed, id
+		got_focus, buffer_changed, id, drum_kit_name = UI.TextBox( "kit name", 27, "" )
+
+		if got_focus then
+			UI.SetTextBoxText( id, old_name )
+		end
+
+		if UI.Button( "OK" ) then
+			if drum_kit_name ~= "" then
+				drum_kits[ cur_drum_kit_index ].name = drum_kit_name
+			end
+			rename_kit_window_open = false
+			UI.EndModalWindow()
+		end
+		UI.SameLine()
+		if UI.Button( "Cancel" ) then
+			rename_kit_window_open = false
+			UI.EndModalWindow()
+		end
+		UI.End( pass )
+	else
+		old_name = drum_kits[ cur_drum_kit_index ].name
 	end
 
 	ui_passes = UI.RenderFrame( pass )
