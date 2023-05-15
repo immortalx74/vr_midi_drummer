@@ -265,10 +265,10 @@ local function LoadKits()
 			cur_piece.name = kits[ i ][ "kitpieces" ][ j ][ "name" ]
 			cur_piece.note = { kits[ i ][ "kitpieces" ][ j ][ "note" ][ 1 ], kits[ i ][ "kitpieces" ][ j ][ "note" ][ 2 ] }
 			cur_piece.type = kits[ i ][ "kitpieces" ][ j ][ "type" ]
+			cur_piece.channel = kits[ i ][ "kitpieces" ][ j ][ "channel" ]
 
 			if cur_piece.type == e_drum_kit_piece_type.hihat then
 				cur_piece.note[ 3 ] = kits[ i ][ "kitpieces" ][ j ][ "note" ][ 3 ]
-				cur_piece.note[ 4 ] = kits[ i ][ "kitpieces" ][ j ][ "note" ][ 4 ]
 			end
 
 			cur_piece.keybind = kits[ i ][ "kitpieces" ][ j ][ "keybind" ]
@@ -296,10 +296,10 @@ local function SaveKits()
 			cur_piece[ "name" ] = drum_kits[ i ][ j ].name
 			cur_piece[ "note" ] = { drum_kits[ i ][ j ].note[ 1 ], drum_kits[ i ][ j ].note[ 2 ] }
 			cur_piece[ "type" ] = drum_kits[ i ][ j ].type
+			cur_piece[ "channel" ] = drum_kits[ i ][ j ].channel
 
 			if cur_piece.type == e_drum_kit_piece_type.hihat then
 				cur_piece[ "note" ][ 3 ] = drum_kits[ i ][ j ].note[ 3 ]
-				cur_piece[ "note" ][ 4 ] = drum_kits[ i ][ j ].note[ 4 ]
 			end
 
 			cur_piece[ "keybind" ] = drum_kits[ i ][ j ].keybind
@@ -323,6 +323,7 @@ local function AddKit()
 		local piece = {}
 		piece.name = v.name
 		piece.type = v.type
+		piece.channel = v.channel
 		piece.note = v.note
 		piece.keybind = v.keybind
 		piece.collider = v.collider
@@ -441,7 +442,7 @@ local function DrawUI( pass )
 	local changed
 	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ] = UI.SliderInt( "Note outer", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 2 ], 0, 127 )
 
-	-- hihat has 4 notes (2 open, 2 closed)
+	-- hihat has 1 additional note (pedal down)
 	local selected_piece_type = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].type
 	if selected_piece_type == e_drum_kit_piece_type.hihat then
 		if UI.Button( "-" ) then
@@ -460,27 +461,21 @@ local function DrawUI( pass )
 
 		UI.SameLine()
 		local changed
-		changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 3 ] = UI.SliderInt( "Note inner (closed)", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 3 ], 0, 127 )
-
-
-		if UI.Button( "-" ) then
-			if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ] > 0 then
-				drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ] - 1
-			end
-		end
-
-		UI.SameLine()
-
-		if UI.Button( "+" ) then
-			if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ] < 127 then
-				drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ] = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ] + 1
-			end
-		end
-
-		UI.SameLine()
-		local changed
-		changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ] = UI.SliderInt( "Note outer (closed)", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 4 ], 0, 127 )
+		changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 3 ] = UI.SliderInt( "Note pedal down", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].note[ 3 ], 0, 127 )
 	end
+
+	local cur_piece_channel = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel
+	if UI.Button( "-" ) and cur_piece_channel > 0 then
+		drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel - 1
+	end
+	UI.SameLine()
+	if UI.Button( "+" ) and cur_piece_channel < 15 then
+		drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel = drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel + 1
+	end
+	UI.SameLine()
+	local changed
+	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel = UI.SliderInt( "MIDI Channel", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel, 0, 15 )
+	-- UI.Label( "MIDI Channel: " .. cur_piece_channel )
 
 	local cur_bind = "-- none --"
 	if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind ~= "" then
@@ -624,13 +619,14 @@ local function DrawUI( pass )
 end
 
 local function UpdateNoteOffEvents()
+	-- scheduled_off_notes fields: 1 = note, 2 = frame count, 3 = channel
 	for i, v in ipairs( scheduled_off_notes ) do
 		v[ 2 ] = v[ 2 ] + 1
 	end
 
 	for i = #scheduled_off_notes, 1, -1 do
 		if scheduled_off_notes[ i ][ 2 ] > 15 then
-			MIDI.noteOn( cur_MIDI_port, scheduled_off_notes[ i ][ 1 ], 0, 1 )
+			MIDI.noteOn( cur_MIDI_port, scheduled_off_notes[ i ][ 1 ], 0, scheduled_off_notes[ i ][ 3 ] )
 			table.remove( scheduled_off_notes, i )
 		end
 	end
@@ -646,9 +642,28 @@ function lovr.keypressed( key, scancode, repeating )
 		for i, v in ipairs( pieces ) do
 			if key == pieces[ i ].keybind then
 				if drum_kits[ cur_drum_kit_index ][ i ].type ~= e_drum_kit_piece_type.hihat then
-					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 127, 1 )
+					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 127, drum_kits[ cur_drum_kit_index ][ i ].channel )
 					table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 0 } )
 					break
+				elseif not hihat_closed and drum_kits[ cur_drum_kit_index ][ i ].type == e_drum_kit_piece_type.hihat then
+					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 127, drum_kits[ cur_drum_kit_index ][ i ].channel )
+					MIDI.sendMessage( cur_MIDI_port, 176, 4, 127 )
+					table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 0 } )
+					break
+				end
+			end
+		end
+	end
+end
+
+function lovr.keyreleased( key, scancode )
+	if not keybind_window_open then
+		local pieces = drum_kits[ cur_drum_kit_index ]
+		for i, v in ipairs( pieces ) do
+			if key == pieces[ i ].keybind then
+				if drum_kits[ cur_drum_kit_index ][ i ].type == e_drum_kit_piece_type.hihat then
+					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 0, drum_kits[ cur_drum_kit_index ][ i ].channel )
+					MIDI.sendMessage( cur_MIDI_port, 176, 4, 0 )
 				end
 			end
 		end
@@ -862,16 +877,8 @@ function App.Update( dt )
 				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 2 ]
 				if L_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 1 ] end
 
-				-- handle hihat open/closed Left
-				if hihat_closed then
-					if drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].type == e_drum_kit_piece_type.hihat then
-						triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 4 ]
-						if L_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 3 ] end
-					end
-				end
-
-				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.left_vel, 1 )
-				table.insert( scheduled_off_notes, { triggered_note, 0 } )
+				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.left_vel, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel )
+				table.insert( scheduled_off_notes, { triggered_note, 0, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel } )
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
 					lovr.headset.vibrate( "hand/left", strength, 0.1 )
@@ -887,16 +894,8 @@ function App.Update( dt )
 				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 2 ]
 				if R_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 1 ] end
 
-				-- handle hihat open/closed Right
-				if hihat_closed then
-					if drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].type == e_drum_kit_piece_type.hihat then
-						triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 4 ]
-						if R_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 3 ] end
-					end
-				end
-
-				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.right_vel, 1 )
-				table.insert( scheduled_off_notes, { triggered_note, 0 } )
+				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.right_vel, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].channel )
+				table.insert( scheduled_off_notes, { triggered_note, 0, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].channel } )
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.right_vel )
 					lovr.headset.vibrate( "hand/right", strength, 0.1 )
