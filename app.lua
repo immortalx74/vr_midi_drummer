@@ -475,7 +475,6 @@ local function DrawUI( pass )
 	UI.SameLine()
 	local changed
 	changed, drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel = UI.SliderInt( "MIDI Channel", drum_kits[ cur_drum_kit_index ][ cur_piece_index ].channel, 0, 15 )
-	-- UI.Label( "MIDI Channel: " .. cur_piece_channel )
 
 	local cur_bind = "-- none --"
 	if drum_kits[ cur_drum_kit_index ][ cur_piece_index ].keybind ~= "" then
@@ -531,9 +530,9 @@ local function DrawUI( pass )
 			new_piece.name = available_pieces[ pc_idx ][ 1 ]
 			new_piece.type = available_pieces[ pc_idx ][ 4 ]
 			new_piece.note = { 0, 0 }
+			new_piece.channel = 0
 			if new_piece.type == e_drum_kit_piece_type.hihat then
 				new_piece.note[ 3 ] = 0
-				new_piece.note[ 4 ] = 0
 			end
 			new_piece.keybind = ""
 			local sy = available_pieces[ pc_idx ][ 3 ]
