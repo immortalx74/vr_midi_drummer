@@ -36,6 +36,7 @@ local available_pieces = {
 	{ "Cymbal 21",    0.5334, 0,      5 },
 }
 
+local hihat_open_value = 127
 local drum_kit_name = ""
 local hihat_closed = false
 local hihat_keybind = nil
@@ -54,10 +55,10 @@ local cur_MIDI_port = 0
 local mode = e_mode.play
 local setup_window_pose = lovr.math.newMat4( vec3( -1, 1, -0.6 ), quat( math.pi / 4, 0, 1, 0 ) )
 local show_colliders = false
-local skybox_tex = lovr.graphics.newTexture( "skybox3.hdr", { mipmaps = false } )
+local skybox_tex = lovr.graphics.newTexture( "res/skybox.hdr", { mipmaps = false } )
 local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
-local shader = lovr.graphics.newShader( vs, fs )
+local shader = lovr.graphics.newShader( vs, fs, { flags = { glow = true, normalMap = true, vertexTangents = false, tonemap = false } } )
 local world = lovr.physics.newWorld( 0, 0, 0, false, { "drums", "stickL", "stickR", "drums_inner" } )
 local mdl_stick, mdl_cymbal, mdl_drum, mdl_drum_highlight, mdl_cymbal_highlight
 local cur_piece_index = 1
@@ -93,9 +94,10 @@ local function ReadFileToSTring( filename )
 end
 
 local function ShaderOn( pass )
+	pass:skybox( skybox_tex )
+	pass:setColor( 1, 1, 1 )
 	pass:setShader( shader )
 	local lightPos = vec3( 0, 2.5, -1.3 )
-	pass:setColor( 1, 1, 1 )
 	pass:send( 'ambience', { 0.05, 0.05, 0.05, 1.0 } )
 	pass:send( 'lightColor', { 1.0, 1.0, 1.0, 1.0 } )
 	pass:send( 'lightPos', lightPos )
@@ -111,7 +113,6 @@ local function SetEnvironment( pass )
 	lovr.graphics.setBackgroundColor( 1, 1, 1 )
 	ShaderOff( pass )
 	pass:setColor( 1, 1, 1 )
-	pass:skybox( skybox_tex )
 end
 
 local function MapRange( from_min, from_max, to_min, to_max, v )
@@ -207,9 +208,8 @@ local function DrawDrumKit( pass )
 			end
 		elseif v.type == e_drum_kit_piece_type.hihat then
 			local hihat_top_pose = mat4( v.pose )
-			if not hihat_closed then
-				hihat_top_pose:translate( 0, 0.02, 0 )
-			end
+			local dist = MapRange( 0, 127, 0, 0.03, hihat_open_value )
+			hihat_top_pose:translate( 0, dist, 0 )
 			pass:draw( mdl_cymbal, hihat_top_pose )
 			local hihat_bottom_pose = mat4( v.pose ):rotate( math.pi, 1, 0, 0 )
 			pass:draw( mdl_cymbal, hihat_bottom_pose )
@@ -645,6 +645,7 @@ function lovr.keypressed( key, scancode, repeating )
 					table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 0 } )
 					break
 				elseif not hihat_closed and drum_kits[ cur_drum_kit_index ][ i ].type == e_drum_kit_piece_type.hihat then
+					hihat_open_value = 0
 					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 127, drum_kits[ cur_drum_kit_index ][ i ].channel )
 					MIDI.sendMessage( cur_MIDI_port, 176, 4, 127 )
 					table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 0 } )
@@ -661,7 +662,7 @@ function lovr.keyreleased( key, scancode )
 		for i, v in ipairs( pieces ) do
 			if key == pieces[ i ].keybind then
 				if drum_kits[ cur_drum_kit_index ][ i ].type == e_drum_kit_piece_type.hihat then
-					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 0, drum_kits[ cur_drum_kit_index ][ i ].channel )
+					hihat_open_value = 127
 					MIDI.sendMessage( cur_MIDI_port, 176, 4, 0 )
 				end
 			end
@@ -689,6 +690,18 @@ function App.Init()
 	mdl_room = lovr.graphics.newModel( "res/room.glb" )
 	mdl_drum_highlight = lovr.graphics.newModel( "res/drum_highlight.glb" )
 	mdl_cymbal_highlight = lovr.graphics.newModel( "res/cymbal_highlight.glb" )
+	mdl_glass = lovr.graphics.newModel( "res/glass.glb" )
+	mdl_sofa = lovr.graphics.newModel( "res/sofa.glb" )
+	mdl_window = lovr.graphics.newModel( "res/window.glb" )
+	mdl_plant = lovr.graphics.newModel( "res/plant.glb" )
+	mdl_poster = lovr.graphics.newModel( "res/poster.glb" )
+	mdl_light = lovr.graphics.newModel( "res/light.glb" )
+	mdl_bookself = lovr.graphics.newModel( "res/bookself.glb" )
+	mdl_table = lovr.graphics.newModel( "res/table.glb" )
+	mdl_misc = lovr.graphics.newModel( "res/misc.glb" )
+	mdl_books = lovr.graphics.newModel( "res/books.glb" )
+	mdl_carpet = lovr.graphics.newModel( "res/carpet.glb" )
+	mdl_handle = lovr.graphics.newModel( "res/handle.glb" )
 
 	LoadKits()
 	SetupDrumColliders()
@@ -707,6 +720,16 @@ function App.Init()
 end
 
 function App.Update( dt )
+	-- MIDI in test
+
+	-- local a, b, c = MIDI.getMessage( 1 )
+	-- if a and b == 44 then
+	-- 	hihat_open_value = MapRange( 127, 0, 0, 127, c )
+	-- 	if hihat_open_value < 0 then hihat_open_value = 0 end
+	-- 	if hihat_open_value > 127 then hihat_open_value = 127 end
+	-- 	MIDI.sendMessage( cur_MIDI_port, 208, 36, c )
+	-- end
+
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		if drum_kits[ cur_drum_kit_index ][ i ].type == e_drum_kit_piece_type.hihat then
 			hihat_keybind = drum_kits[ cur_drum_kit_index ][ i ].keybind
@@ -875,8 +898,8 @@ function App.Update( dt )
 			if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
 				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 2 ]
 				if L_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 1 ] end
-
 				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.left_vel, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel )
+
 				table.insert( scheduled_off_notes, { triggered_note, 0, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel } )
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
@@ -920,11 +943,26 @@ end
 
 function App.RenderFrame( pass )
 	DrawUI( pass )
+	pass:rotate( 3.07, 0, 1, 0 )
 	SetEnvironment( pass )
 	ShaderOn( pass )
+	pass:origin()
 	DrawDrumKit( pass )
 	DrawSticks( pass )
 	pass:draw( mdl_room )
+	pass:draw( mdl_sofa )
+	pass:draw( mdl_window )
+	pass:draw( mdl_plant )
+	pass:draw( mdl_poster )
+	pass:draw( mdl_light )
+	pass:draw( mdl_bookself )
+	pass:draw( mdl_table )
+	pass:draw( mdl_misc )
+	pass:draw( mdl_books )
+	pass:draw( mdl_carpet )
+	pass:draw( mdl_handle )
+
+	pass:draw( mdl_glass )
 
 	ShaderOff( pass )
 	Phywire.render_shapes.show_contacts = true
