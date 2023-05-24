@@ -34,7 +34,7 @@ NOTE: If you run the app from source you'll need `luamidi.dll` and `lua51.dll` o
 - By default the kick is mapped to the `Space` key. You can change this mapping by selecting the kick piece in the floating window and clicking on the `Assign key...` button
 - Similarly, the hihat open/closed is mapped to the `h` key by default
 
-![vr_midi_drummer](https://i.imgur.com/P9vXdjh.png)
+![vr_midi_drummer](https://i.imgur.com/62M2v9n.png)
 
 **VR MIDI Drummer uses these libraries:**
 - [lovr-phywire](https://github.com/jmiskovic/lovr-phywire)
