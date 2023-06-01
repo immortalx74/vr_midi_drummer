@@ -1,6 +1,6 @@
 App = {}
 
-local MIDI = require "luamidi"
+local MIDI = require "sampler"
 local UI = require "ui/ui"
 local Phywire = require "phywire"
 local Json = require "json"
