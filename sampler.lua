@@ -47,8 +47,6 @@ function sampler.new(settings)
 end
 
 
-
-
 function sampler:findSample(note, velocity)
   local sample = self.sample_from_note[note]
   if not sample then return false end
@@ -153,24 +151,26 @@ local id = 0
 
 local MIDIctrl = {}
 
+
+function MIDIctrl.noteOff(note, velocity, channel)
+  local source = self.sources[note]
+  if source then
+      source:stop()
+  end
+end
+
+
 function MIDIctrl.noteOn(port, note, velocity, channel)
-  print('note on', note)
+  if velocity == 0 then
+    MIDIctrl.noteOff(note, velocity, channel)
+    return
+  end
   drum_sampler:playNote(id, note, velocity, pitch)
   id = id + 1
 end
 
 
-function MIDIctrl.noteOff(note, velocity, channel)
-  print('note off', note)
-    local source = self.sources[note]
-    if source then
-        source:stop()
-    end
-end
-
-
 function MIDIctrl.sendMessage(status, data1, data2, channel)
-  print('send msg', note)
   local status, data1, data2, channel = unpack(msg)
   local command = status - bit.lshift(bit.rshift(status, 4), 4)
 
