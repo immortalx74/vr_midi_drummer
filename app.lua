@@ -1,4 +1,4 @@
-App = {}
+local App = {}
 
 local MIDI = require "luamidi"
 local UI = require "ui/ui"
@@ -36,6 +36,7 @@ local available_pieces = {
 	{ "Cymbal 21",    0.5334, 0,      5 },
 }
 
+local shapeA, shapeB = nil, nil
 local hihat_open_value = 127
 local drum_kit_name = ""
 local hihat_closed = false
@@ -59,7 +60,7 @@ local skybox_tex = lovr.graphics.newTexture( "res/skybox.hdr", { mipmaps = false
 local vs = lovr.filesystem.read( "light.vs" )
 local fs = lovr.filesystem.read( "light.fs" )
 local shader = lovr.graphics.newShader( vs, fs, { flags = { glow = true, normalMap = true, vertexTangents = false, tonemap = false } } )
-local world = lovr.physics.newWorld( 0, 0, 0, false, { "drums", "stickL", "stickR", "drums_inner" } )
+local world = lovr.physics.newWorld( { tags = { "drums", "stickL", "stickR", "drums_inner" }, staticTags = { "drums", "stickL", "stickR", "drums_inner" } } )
 local mdl_stick, mdl_cymbal, mdl_drum, mdl_drum_highlight, mdl_cymbal_highlight
 local cur_piece_index = 1
 local cur_drum_kit_index = 1
@@ -183,12 +184,12 @@ local function SetupDrumColliders()
 		drum_kits[ cur_drum_kit_index ][ i ].collider_inner:setPose( vec3( drum_kits[ cur_drum_kit_index ][ i ].pose ),
 			quat( drum_kits[ cur_drum_kit_index ][ i ].pose ):mul( quat( math.pi / 2, 1, 0, 0 ) ) )
 
-		v.collider:setKinematic( true )
 		v.collider:setTag( "drums" )
 		v.collider:setUserData( i )
-		v.collider_inner:setKinematic( true )
+		v.collider:setKinematic( true )
 		v.collider_inner:setTag( "drums_inner" )
 		v.collider_inner:setUserData( i )
+		v.collider_inner:setKinematic( true )
 	end
 end
 
@@ -501,12 +502,14 @@ local function DrawUI( pass )
 	if released then
 		sticks.left_collider:destroy()
 		sticks.right_collider:destroy()
+
 		sticks.left_collider = world:newCylinderCollider( 0, 0, 0, 0.01, sticks.length )
-		sticks.left_collider:setKinematic( true )
 		sticks.left_collider:setTag( "stickL" )
+		sticks.left_collider:setKinematic( true )
+
 		sticks.right_collider = world:newCylinderCollider( 0, 0, 0, 0.01, sticks.length )
-		sticks.right_collider:setKinematic( true )
 		sticks.right_collider:setTag( "stickR" )
+		sticks.right_collider:setKinematic( true )
 	end
 	released, sticks.rotation = UI.SliderFloat( "Stick rotation", sticks.rotation, -1, 0.3 )
 	UI.End( pass )
@@ -707,16 +710,20 @@ function App.Init()
 	SetupDrumColliders()
 
 	sticks.left_collider = world:newCylinderCollider( 0, 0, 0, 0.01, sticks.length )
-	sticks.left_collider:setKinematic( true )
 	sticks.left_collider:setTag( "stickL" )
+	sticks.left_collider:setKinematic( true )
 	sticks.right_collider = world:newCylinderCollider( 0, 0, 0, 0.01, sticks.length )
-	sticks.right_collider:setKinematic( true )
 	sticks.right_collider:setTag( "stickR" )
+	sticks.right_collider:setKinematic( true )
 
-	world:disableCollisionBetween( "stickL", "stickR" )
-	world:disableCollisionBetween( "drums", "drums" )
+
 	world:disableCollisionBetween( "drums_inner", "drums_inner" )
-	world:disableCollisionBetween( "drums", "drums_inner" )
+	world:disableCollisionBetween( "drums", "drums" )
+	world:disableCollisionBetween( "stickL", "stickR" )
+	world:enableCollisionBetween( "stickL", "drums" )
+	world:enableCollisionBetween( "stickL", "drums_inner" )
+	world:enableCollisionBetween( "stickR", "drums" )
+	world:enableCollisionBetween( "stickR", "drums_inner" )
 end
 
 function App.Update( dt )
@@ -750,8 +757,8 @@ function App.Update( dt )
 	UpdateNoteOffEvents()
 	UpdateSticksColliders()
 	UpdateSticksVelocity()
+	shapeA, shapeB = nil, nil
 	world:update( dt )
-	world:computeOverlaps()
 
 	if lovr.headset.isDown( "hand/right", "a" ) then
 		mode = e_mode.move_piece
@@ -769,20 +776,19 @@ function App.Update( dt )
 		mode = e_mode.play
 	end
 
+	local lx, ly, lz, langle, lax, lay, laz = sticks.left_collider:getPose()
+	local rx, ry, rz, rangle, rax, ray, raz = sticks.right_collider:getPose()
+
+	local outer_left = world:overlapShape( sticks.left_collider:getShape(), vec3( lx, ly, lz ), quat( langle, lax, lay, laz ), "drums" )
+	local inner_left = world:overlapShape( sticks.left_collider:getShape(), vec3( lx, ly, lz ), quat( langle, lax, lay, laz ), "drums_inner" )
+	local outer_right = world:overlapShape( sticks.right_collider:getShape(), vec3( rx, ry, rz ), quat( rangle, rax, ray, raz ), "drums" )
+	local inner_right = world:overlapShape( sticks.right_collider:getShape(), vec3( rx, ry, rz ), quat( rangle, rax, ray, raz ), "drums_inner" )
+
 	if mode == e_mode.move_piece then
 		if dragged_piece == nil then
-			for shapeA, shapeB in world:overlaps() do
-				local are_colliding = world:collide( shapeA, shapeB )
-				if are_colliding then
-					if shapeB:getCollider():getTag() == "drums" and shapeA:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "a" ) then
-						dragged_piece = shapeB:getCollider():getUserData()
-						drag_offset:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose )
-					end
-					if shapeA:getCollider():getTag() == "drums" and shapeB:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "a" ) then
-						dragged_piece = shapeA:getCollider():getUserData()
-						drag_offset:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose )
-					end
-				end
+			if inner_right or outer_right and lovr.headset.wasPressed( "hand/right", "a" ) then
+				dragged_piece = inner_right and inner_right:getUserData() or outer_right:getUserData()
+				drag_offset:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ dragged_piece ].pose )
 			end
 		end
 
@@ -797,27 +803,13 @@ function App.Update( dt )
 
 	if mode == e_mode.move_kit then
 		if dragged_piece == nil then
-			for shapeA, shapeB in world:overlaps() do
-				local are_colliding = world:collide( shapeA, shapeB )
-				if are_colliding then
-					if shapeB:getCollider():getTag() == "drums" and shapeA:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "b" ) then
-						dragged_piece = shapeB:getCollider():getUserData()
-						drag_table = {}
-						for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-							local m = lovr.math.newMat4()
-							m:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ i ].pose )
-							table.insert( drag_table, m )
-						end
-					end
-					if shapeA:getCollider():getTag() == "drums" and shapeB:getCollider():getTag() == "stickR" and lovr.headset.wasPressed( "hand/right", "b" ) then
-						dragged_piece = shapeA:getCollider():getUserData()
-						drag_table = {}
-						for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
-							local m = lovr.math.newMat4()
-							m:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ i ].pose )
-							table.insert( drag_table, m )
-						end
-					end
+			if inner_right or outer_right and lovr.headset.wasPressed( "hand/right", "b" ) then
+				dragged_piece = inner_right and inner_right:getUserData() or outer_right:getUserData()
+				drag_table = {}
+				for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
+					local m = lovr.math.newMat4()
+					m:set( mat4( lovr.headset.getPose( "hand/right" ) ):invert() * drum_kits[ cur_drum_kit_index ][ i ].pose )
+					table.insert( drag_table, m )
 				end
 			end
 		end
@@ -839,58 +831,32 @@ function App.Update( dt )
 		local L_inner_col_this_frame = false
 		local R_inner_col_this_frame = false
 
-		for shapeA, shapeB in world:overlaps() do
-			local are_colliding = world:collide( shapeA, shapeB )
-			if are_colliding then
-				if shapeA:getCollider():getTag() == "drums" then
-					if shapeB:getCollider():getTag() == "stickL" then
-						L_col_this_frame = true
-						if sticks.left_colliding_drum == nil then
-							sticks.left_colliding_drum = shapeA:getCollider():getUserData()
-						end
-					elseif shapeB:getCollider():getTag() == "stickR" then
-						R_col_this_frame = true
-						if sticks.right_colliding_drum == nil then
-							sticks.right_colliding_drum = shapeA:getCollider():getUserData()
-						end
-					end
-				elseif shapeB:getCollider():getTag() == "drums" then
-					if shapeA:getCollider():getTag() == "stickL" then
-						L_col_this_frame = true
-						if sticks.left_colliding_drum == nil then
-							sticks.left_colliding_drum = shapeB:getCollider():getUserData()
-						end
-					elseif shapeA:getCollider():getTag() == "stickR" then
-						R_col_this_frame = true
-						if sticks.right_colliding_drum == nil then
-							sticks.right_colliding_drum = shapeB:getCollider():getUserData()
-						end
-					end
-				end
+		if outer_left then
+			L_col_this_frame = true
+			if sticks.left_colliding_drum == nil then
+				sticks.left_colliding_drum = outer_left:getUserData()
 			end
 		end
 
-		-- 2nd overlap test
-		world:computeOverlaps()
-		for shapeA, shapeB in world:overlaps() do
-			local are_colliding = world:collide( shapeA, shapeB )
-			if are_colliding then
-				if sticks.left_colliding_drum ~= nil then
-					if shapeA:getCollider():getTag() == "drums_inner" and shapeB:getCollider():getTag() == "stickL" then
-						L_inner_col_this_frame = true
-					end
-					if shapeB:getCollider():getTag() == "drums_inner" and shapeA:getCollider():getTag() == "stickL" then
-						L_inner_col_this_frame = true
-					end
-				end
-				if sticks.right_colliding_drum ~= nil then
-					if shapeA:getCollider():getTag() == "drums_inner" and shapeB:getCollider():getTag() == "stickR" then
-						R_inner_col_this_frame = true
-					end
-					if shapeB:getCollider():getTag() == "drums_inner" and shapeA:getCollider():getTag() == "stickR" then
-						R_inner_col_this_frame = true
-					end
-				end
+		if inner_left then
+			L_inner_col_this_frame = true
+			if sticks.left_colliding_drum == nil then
+				sticks.left_colliding_drum = inner_left:getUserData()
+			end
+		end
+
+
+		if outer_right then
+			R_col_this_frame = true
+			if sticks.right_colliding_drum == nil then
+				sticks.right_colliding_drum = outer_right:getUserData()
+			end
+		end
+
+		if inner_right then
+			R_inner_col_this_frame = true
+			if sticks.right_colliding_drum == nil then
+				sticks.right_colliding_drum = inner_right:getUserData()
 			end
 		end
 
@@ -965,7 +931,7 @@ function App.RenderFrame( pass )
 	pass:draw( mdl_glass )
 
 	ShaderOff( pass )
-	Phywire.render_shapes.show_contacts = true
+	-- Phywire.draw( pass, world )
 	if show_colliders then Phywire.draw( pass, world, Phywire.render_shapes ) end
 end
 

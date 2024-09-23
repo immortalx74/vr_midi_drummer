@@ -17,7 +17,7 @@
 - If you use Reaper you can use the `x` and `y` buttons on the left controller to Fast forward/Rewind the song you play along. To set this up follow [this](https://www.youtube.com/watch?v=YLQmzY_kWnk) guide. Other DAWs should be able to do that too 
   
 
-NOTE: If you run the app from source you'll need `luamidi.dll` and `lua51.dll` on the same path as `lovr.exe`. Get it from the releases (inside the released app archive)
+NOTE: If you run the app from source you'll need `luamidi.dll` and `lua51.dll` on the same path as `lovr.exe`. Get it from the releases (inside the released app archive). Also, the source code targets the latest dev of LÖVR, so it won't work with stable v0.17.1 and lower.
 
 
 **Example setup guide using Reaper:**
