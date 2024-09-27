@@ -9,6 +9,7 @@ local exclude = {
 	".vscode",
 	"build",
 	"build.lua",
+	"bkup"
 }
 
 local exclude_libs = { "socket.dll" }
@@ -49,6 +50,7 @@ CreateExcludeLibsFile()
 os.execute( "xcopy " .. lovr_directory .. "\\*.dll build /EXCLUDE:build\\exclude_libs.txt" )
 os.execute( "del build\\exclude_libs.txt" )
 os.execute( "del build\\out.zip" )
+os.execute("copy kits.json build")
 
 local filenames = GetFilesAndFolders( "build\\", exclude )
 os.execute( "tar.exe -acf build\\" .. package_name .. ".zip " .. filenames )

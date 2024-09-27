@@ -11,9 +11,14 @@ local e_axis = { x = 1, y = 2, z = 3 }
 local e_drum_kit_piece_type = {
 	snare = 1,
 	kick = 2,
-	tom = 3,
-	hihat = 4,
-	cymbal = 5,
+	hihat = 3,
+	crash_left = 4,
+	crash_right = 5,
+	ride = 6,
+	tom1 = 7,
+	tom2 = 8,
+	tom3 = 9,
+	tom4 = 10
 }
 
 local available_pieces = {
@@ -23,20 +28,39 @@ local available_pieces = {
 	{ "Kick 20 X 15", 0.508,  0.381,  2 },
 	{ "Kick 22 X 16", 0.5588, 0.4064, 2 },
 	{ "Kick 22 X 17", 0.5588, 0.4318, 2 },
-	{ "Tom 10 X 8",   0.254,  0.2032, 3 },
-	{ "Tom 12 X 9",   0.3048, 0.2286, 3 },
-	{ "Tom 14 X 10",  0.3556, 0.254,  3 },
-	{ "Tom 16 X 14",  0.4064, 0.3556, 3 },
-	{ "Hihat 13",     0.3302, 0,      4 },
-	{ "Hihat 14",     0.3556, 0,      4 },
-	{ "Hihat 15",     0.381,  0,      4 },
-	{ "Cymbal 14",    0.3556, 0,      5 },
-	{ "Cymbal 18",    0.4572, 0,      5 },
-	{ "Cymbal 19",    0.4826, 0,      5 },
-	{ "Cymbal 21",    0.5334, 0,      5 },
+	{ "Tom 10 X 8",   0.254,  0.2032, 7 },
+	{ "Tom 12 X 9",   0.3048, 0.2286, 8 },
+	{ "Tom 14 X 10",  0.3556, 0.254,  9 },
+	{ "Tom 16 X 14",  0.4064, 0.3556, 10 },
+	{ "Hihat 13",     0.3302, 0,      3 },
+	{ "Hihat 14",     0.3556, 0,      3 },
+	{ "Hihat 15",     0.381,  0,      3 },
+	{ "Crash_L 18",   0.4572, 0,      4 },
+	{ "Crash_L 19",   0.4826, 0,      4 },
+	{ "Crash_L 21",   0.5334, 0,      4 },
+	{ "Crash_R 18",   0.4572, 0,      5 },
+	{ "Crash_R 19",   0.4826, 0,      5 },
+	{ "Crash_R 21",   0.5334, 0,      5 },
+	{ "Ride 18",      0.4572, 0,      6 },
+	{ "Ride 19",      0.4826, 0,      6 },
+	{ "Ride 21",      0.5334, 0,      6 },
 }
 
-local shapeA, shapeB = nil, nil
+local samples_list = {
+	{ inner = {},                         outer = {} },
+	{ inner = {},                         outer = {} },
+	{ inner = { open = {}, closed = {} }, outer = { open = {}, closed = {} }, pedal = {} },
+	{ inner = {},                         outer = {} },
+	{ inner = {},                         outer = {} },
+	{ inner = {},                         outer = {} },
+	{ inner = {},                         outer = {} },
+	{ inner = {},                         outer = {} },
+	{ inner = {},                         outer = {} },
+	{ inner = {},                         outer = {} },
+}
+
+local output_mode = "samples"
+local output_mode_idx = 1
 local hihat_open_value = 127
 local drum_kit_name = ""
 local hihat_closed = false
@@ -160,9 +184,9 @@ local function SetupDrumColliders()
 	for i, v in ipairs( drum_kits ) do
 		for j, k in ipairs( drum_kits[ i ] ) do
 			if drum_kits[ i ][ j ].collider then
-				drum_kits[ i ][ j ].collider:destroy()
+				if not drum_kits[ i ][ j ].collider:isDestroyed() then drum_kits[ i ][ j ].collider:destroy() end
 				drum_kits[ i ][ j ].collider = nil
-				drum_kits[ i ][ j ].collider_inner:destroy()
+				if not drum_kits[ i ][ j ].collider_inner:isDestroyed() then drum_kits[ i ][ j ].collider_inner:destroy() end
 				drum_kits[ i ][ j ].collider_inner = nil
 			end
 		end
@@ -171,7 +195,7 @@ local function SetupDrumColliders()
 	for i, v in ipairs( drum_kits[ cur_drum_kit_index ] ) do
 		local x, y, z, sx, sy, sz = v.pose:unpack()
 
-		if v.type == e_drum_kit_piece_type.cymbal or v.type == e_drum_kit_piece_type.hihat then
+		if v.type == e_drum_kit_piece_type.crash_left or v.type == e_drum_kit_piece_type.ride or v.type == e_drum_kit_piece_type.crash_right or v.type == e_drum_kit_piece_type.hihat then
 			v.collider = world:newCylinderCollider( 0, 0, 0, sx / 2, 0.08 )
 			v.collider_inner = world:newCylinderCollider( 0, 0, 0, sx / 8, 0.08 )
 		else
@@ -197,7 +221,7 @@ local function DrawDrumKit( pass )
 	local cur_kit = drum_kits[ cur_drum_kit_index ]
 
 	for i, v in ipairs( cur_kit ) do
-		if v.type == e_drum_kit_piece_type.cymbal then
+		if v.type == e_drum_kit_piece_type.crash_left or v.type == e_drum_kit_piece_type.ride or v.type == e_drum_kit_piece_type.crash_right then
 			pass:draw( mdl_cymbal, v.pose )
 			if enable_hit_highlight then
 				if sticks.left_colliding_drum == i or sticks.right_colliding_drum == i then
@@ -250,6 +274,38 @@ local function DrawSticks( pass )
 	pass:draw( mdl_stick, pose )
 end
 
+local function LoadSamples()
+	local options = { decode = true, pitchable = false, spatial = false }
+	local type_id = {
+		[ "sr" ] = 1,
+		[ "kk" ] = 2,
+		[ "cl" ] = 4,
+		[ "cr" ] = 5,
+		[ "rd" ] = 6,
+		[ "t1" ] = 7,
+		[ "t2" ] = 8,
+		[ "t3" ] = 9,
+		[ "t4" ] = 10,
+	}
+	local items = lovr.filesystem.getDirectoryItems( "samples" )
+	for i, filename in ipairs( items ) do
+		local type = string.sub( filename, 1, 2 )
+		local zone_prefix = string.sub( filename, 4, 4 )
+		local zone = zone_prefix == "i" and "inner" or "outer"
+		local sample_num = string.sub( filename, 6, 6 )
+
+		if type == "ho" then
+			table.insert( samples_list[ 3 ][ zone ].open, sample_num, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+		elseif type == "hc" then
+			table.insert( samples_list[ 3 ][ zone ].closed, sample_num, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+		elseif type == "hh" then
+			table.insert( samples_list[ 3 ][ "pedal" ], 1, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+		else
+			table.insert( samples_list[ type_id[ type ] ][ zone ], sample_num, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+		end
+	end
+end
+
 local function LoadKits()
 	local str = ReadFileToSTring( "kits.json" )
 	local decoded = Json.decode( str )
@@ -275,7 +331,7 @@ local function LoadKits()
 			cur_piece.keybind = kits[ i ][ "kitpieces" ][ j ][ "keybind" ]
 
 			local f = kits[ i ][ "kitpieces" ][ j ][ "pose" ]
-			cur_piece.pose = lovr.math.newMat4( vec3( f[ 1 ], f[ 2 ], f[ 3 ] ), vec3( f[ 4 ], f[ 5 ], f[ 6 ] ), quat( f[ 7 ], f[ 8 ], f[ 9 ], f[ 10 ] ) )
+			cur_piece.pose = lovr.math.newMat4( f[ 1 ], f[ 2 ], f[ 3 ], f[ 4 ], f[ 5 ], f[ 6 ], f[ 7 ], f[ 8 ], f[ 9 ], f[ 10 ], f[ 11 ], f[ 12 ], f[ 13 ], f[ 14 ], f[ 15 ], f[ 16 ] )
 			table.insert( cur_kit, cur_piece )
 		end
 		table.insert( drum_kits, cur_kit )
@@ -304,8 +360,9 @@ local function SaveKits()
 			end
 
 			cur_piece[ "keybind" ] = drum_kits[ i ][ j ].keybind
-			local x, y, z, sx, sy, sz, angle, ax, ay, az = drum_kits[ i ][ j ].pose:unpack()
-			local pose = { x, y, z, sx, sy, sz, angle, ax, ay, az }
+			local m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16 = drum_kits[ i ][ j ].pose:unpack( true )
+			local pose = { m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16 }
+
 			cur_piece.pose = pose
 			table.insert( cur_kit[ "kitpieces" ], cur_piece )
 		end
@@ -329,8 +386,8 @@ local function AddKit()
 		piece.keybind = v.keybind
 		piece.collider = v.collider
 		piece.collider_inner = v.collider_inner
-		local x, y, z, sx, sy, sz, angle, ax, ay, az = v.pose:unpack()
-		piece.pose = lovr.math.newMat4( vec3( x, y, z ), vec3( sx, sy, sz ), quat( angle, ax, ay, az ) )
+		local m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16 = v.pose:unpack( true )
+		piece.pose = lovr.math.newMat4( m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16 )
 		table.insert( new_kit, piece )
 	end
 	table.insert( drum_kits, new_kit )
@@ -365,8 +422,8 @@ local function DrawUI( pass )
 	if UI.Button( "Delete kit", 300 ) then
 		if #drum_kits > 1 then
 			for i = #drum_kits[ cur_drum_kit_index ], 1, -1 do
-				drum_kits[ cur_drum_kit_index ][ i ].collider:destroy()
-				drum_kits[ cur_drum_kit_index ][ i ].collider_inner:destroy()
+				if not drum_kits[ cur_drum_kit_index ][ i ].collider:isDestroyed() then drum_kits[ cur_drum_kit_index ][ i ].collider:destroy() end
+				if not drum_kits[ cur_drum_kit_index ][ i ].collider_inner:isDestroyed() then drum_kits[ cur_drum_kit_index ][ i ].collider_inner:destroy() end
 				table.remove( drum_kits[ cur_drum_kit_index ], i )
 			end
 
@@ -383,7 +440,7 @@ local function DrawUI( pass )
 	end
 
 	UI.SameColumn()
-	if UI.Button( "Save all", 300 ) then
+	if UI.Button( "Save changes", 300 ) then
 		SaveKits()
 	end
 
@@ -401,7 +458,9 @@ local function DrawUI( pass )
 	if UI.Button( "Delete piece", 300 ) then
 		if #drum_kits[ cur_drum_kit_index ] > 1 then -- prevent deleting last piece
 			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].collider:destroy()
+			drum_kits[ cur_drum_kit_index ][ cur_piece_index ].collider_inner:destroy()
 			table.remove( drum_kits[ cur_drum_kit_index ], cur_piece_index )
+			SetupDrumColliders()
 			return
 		end
 	end
@@ -492,6 +551,16 @@ local function DrawUI( pass )
 	UI.Separator()
 	UI.Dummy( 0, 20 )
 
+	if UI.RadioButton( "Output mode: Samples", output_mode_idx == 1 ) then
+		output_mode_idx = 1
+		output_mode = "samples"
+	end
+
+	if UI.RadioButton( "Output mode: MIDI", output_mode_idx == 2 ) then
+		output_mode_idx = 2
+		output_mode = "midi"
+	end
+
 	if UI.CheckBox( "Show colliders", show_colliders ) then show_colliders = not show_colliders end
 	if UI.CheckBox( "Enable haptics", enable_haptics ) then enable_haptics = not enable_haptics end
 	if UI.CheckBox( "Enable hit highlight", enable_hit_highlight ) then enable_hit_highlight = not enable_hit_highlight end
@@ -539,7 +608,7 @@ local function DrawUI( pass )
 			end
 			new_piece.keybind = ""
 			local sy = available_pieces[ pc_idx ][ 3 ]
-			if new_piece.type == e_drum_kit_piece_type.cymbal or new_piece.type == e_drum_kit_piece_type.hihat then
+			if new_piece.type == e_drum_kit_piece_type.crash_left or new_piece.type == e_drum_kit_piece_type.ride or new_piece.type == e_drum_kit_piece_type.crash_right or new_piece.type == e_drum_kit_piece_type.hihat then
 				sy = 0.5
 			end
 			new_piece.pose = lovr.math.newMat4( vec3( 0, 0.7, -0.6 ), vec3( available_pieces[ pc_idx ][ 2 ], sy, available_pieces[ pc_idx ][ 2 ] ), quat() )
@@ -620,6 +689,26 @@ local function DrawUI( pass )
 	ui_passes = UI.RenderFrame( pass )
 end
 
+local function PlaySample( type, zone, variation, velocity )
+	local sample = samples_list[ type ][ zone ][ variation ]
+
+	if type == e_drum_kit_piece_type.hihat then
+		if zone == "pedal" then
+			sample = samples_list[ type ][ zone ][ 1 ]
+		else
+			if hihat_closed then
+				sample = samples_list[ type ][ zone ].closed[ variation ]
+			else
+				sample = samples_list[ type ][ zone ].open[ variation ]
+			end
+		end
+	end
+
+	sample:stop()
+	sample:setVolume( velocity / 127 )
+	sample:play()
+end
+
 local function UpdateNoteOffEvents()
 	-- scheduled_off_notes fields: 1 = note, 2 = frame count, 3 = channel
 	for i, v in ipairs( scheduled_off_notes ) do
@@ -643,16 +732,32 @@ function lovr.keypressed( key, scancode, repeating )
 		local pieces = drum_kits[ cur_drum_kit_index ]
 		for i, v in ipairs( pieces ) do
 			if key == pieces[ i ].keybind then
-				if drum_kits[ cur_drum_kit_index ][ i ].type ~= e_drum_kit_piece_type.hihat then
-					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 127, drum_kits[ cur_drum_kit_index ][ i ].channel )
-					table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 0 } )
-					break
-				elseif not hihat_closed and drum_kits[ cur_drum_kit_index ][ i ].type == e_drum_kit_piece_type.hihat then
-					hihat_open_value = 0
-					MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 127, drum_kits[ cur_drum_kit_index ][ i ].channel )
-					MIDI.sendMessage( cur_MIDI_port, 176, 4, 127 )
-					table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 0 } )
-					break
+				if output_mode == "midi" then
+					if drum_kits[ cur_drum_kit_index ][ i ].type ~= e_drum_kit_piece_type.hihat then
+						MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 127, drum_kits[ cur_drum_kit_index ][ i ].channel )
+						table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 1 ], 0 } )
+						break
+					elseif not hihat_closed and drum_kits[ cur_drum_kit_index ][ i ].type == e_drum_kit_piece_type.hihat then
+						hihat_open_value = 0
+						MIDI.noteOn( cur_MIDI_port, drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 127, drum_kits[ cur_drum_kit_index ][ i ].channel )
+						MIDI.sendMessage( cur_MIDI_port, 176, 4, 127 )
+						table.insert( scheduled_off_notes, { drum_kits[ cur_drum_kit_index ][ i ].note[ 3 ], 0 } )
+						break
+					end
+				else
+					local type = drum_kits[ cur_drum_kit_index ][ i ].type
+					local zone = "inner"
+					local variation = 4
+					local velocity = 127
+
+					if type == e_drum_kit_piece_type.hihat then
+						zone = "pedal"
+						variation = 1
+						hihat_open_value = 0
+						PlaySample( type, zone, variation, velocity )
+					else
+						PlaySample( type, zone, variation, velocity )
+					end
 				end
 			end
 		end
@@ -706,6 +811,7 @@ function App.Init()
 	mdl_carpet = lovr.graphics.newModel( "res/carpet.glb" )
 	mdl_handle = lovr.graphics.newModel( "res/handle.glb" )
 
+	LoadSamples()
 	LoadKits()
 	SetupDrumColliders()
 
@@ -757,7 +863,7 @@ function App.Update( dt )
 	UpdateNoteOffEvents()
 	UpdateSticksColliders()
 	UpdateSticksVelocity()
-	shapeA, shapeB = nil, nil
+
 	world:update( dt )
 
 	if lovr.headset.isDown( "hand/right", "a" ) then
@@ -862,35 +968,59 @@ function App.Update( dt )
 
 		if sticks.left_colliding_drum ~= nil then
 			if sticks.left_colliding_drum_prev == nil or sticks.left_colliding_drum_prev ~= sticks.left_colliding_drum then
-				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 2 ]
-				if L_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 1 ] end
-				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.left_vel, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel )
+				if output_mode == "midi" then
+					local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 2 ]
+					if L_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].note[ 1 ] end
+					MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.left_vel, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel )
 
-				table.insert( scheduled_off_notes, { triggered_note, 0, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel } )
+					table.insert( scheduled_off_notes, { triggered_note, 0, drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].channel } )
+
+					event_info.note = triggered_note
+					if sticks.left_vel > 0 then event_info.velocity = sticks.left_vel end
+				else
+					-- play sample from left stick
+					local type = drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].type
+					local zone = L_inner_col_this_frame and "inner" or "outer"
+					local variation = sticks.left_vel > 0 and math.floor( sticks.left_vel / 32 ) + 1 or 1
+					local sample = samples_list[ type ][ zone ][ variation ]
+					local velocity = sticks.left_vel
+					PlaySample( type, zone, variation, velocity )
+				end
+
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.left_vel )
 					lovr.headset.vibrate( "hand/left", strength, 0.1 )
 				end
 				sticks.left_colliding_drum_prev = sticks.left_colliding_drum
-				event_info.note = triggered_note
-				if sticks.left_vel > 0 then event_info.velocity = sticks.left_vel end
 			end
 		end
 
 		if sticks.right_colliding_drum ~= nil then
 			if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
-				local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 2 ]
-				if R_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 1 ] end
+				if output_mode == "midi" then
+					local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 2 ]
+					if R_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 1 ] end
 
-				MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.right_vel, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].channel )
-				table.insert( scheduled_off_notes, { triggered_note, 0, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].channel } )
+					MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.right_vel, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].channel )
+					table.insert( scheduled_off_notes, { triggered_note, 0, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].channel } )
+
+					event_info.note = triggered_note
+					if sticks.right_vel > 0 then event_info.velocity = sticks.right_vel end
+				else
+					-- play sample from right stick
+					local type = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].type
+					local zone = R_inner_col_this_frame and "inner" or "outer"
+					local variation = sticks.right_vel > 0 and math.floor( sticks.right_vel / 32 ) + 1 or 1
+					local sample = samples_list[ type ][ zone ][ variation ]
+					local velocity = sticks.right_vel
+					PlaySample( type, zone, variation, velocity )
+				end
+
 				if enable_haptics then
 					local strength = MapRange( 0, 127, 0, 1, sticks.right_vel )
 					lovr.headset.vibrate( "hand/right", strength, 0.1 )
 				end
 				sticks.right_colliding_drum_prev = sticks.right_colliding_drum
-				event_info.note = triggered_note
-				if sticks.right_vel > 0 then event_info.velocity = sticks.right_vel end
 			end
 		end
 
