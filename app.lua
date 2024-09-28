@@ -275,7 +275,7 @@ local function DrawSticks( pass )
 end
 
 local function LoadSamples()
-	local options = { decode = true, pitchable = false, spatial = false }
+	local options = { decode = true, pitchable = false, spatial = true, effects = { "spatialization", "attenuation" } }
 	local type_id = {
 		[ "sr" ] = 1,
 		[ "kk" ] = 2,
@@ -293,15 +293,17 @@ local function LoadSamples()
 		local zone_prefix = string.sub( filename, 4, 4 )
 		local zone = zone_prefix == "i" and "inner" or "outer"
 		local sample_num = string.sub( filename, 6, 6 )
+		local source = lovr.audio.newSource( "samples/" .. items[ i ], options )
+		-- source:setEffectEnabled( "spatialization", true )
 
 		if type == "ho" then
-			table.insert( samples_list[ 3 ][ zone ].open, sample_num, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+			table.insert( samples_list[ 3 ][ zone ].open, sample_num, source )
 		elseif type == "hc" then
-			table.insert( samples_list[ 3 ][ zone ].closed, sample_num, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+			table.insert( samples_list[ 3 ][ zone ].closed, sample_num, source )
 		elseif type == "hh" then
-			table.insert( samples_list[ 3 ][ "pedal" ], 1, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+			table.insert( samples_list[ 3 ][ "pedal" ], 1, source )
 		else
-			table.insert( samples_list[ type_id[ type ] ][ zone ], sample_num, lovr.audio.newSource( "samples/" .. items[ i ], options ) )
+			table.insert( samples_list[ type_id[ type ] ][ zone ], sample_num, source )
 		end
 	end
 end
@@ -689,7 +691,7 @@ local function DrawUI( pass )
 	ui_passes = UI.RenderFrame( pass )
 end
 
-local function PlaySample( type, zone, variation, velocity )
+local function PlaySample( type, zone, variation, velocity, position )
 	local sample = samples_list[ type ][ zone ][ variation ]
 
 	if type == e_drum_kit_piece_type.hihat then
@@ -704,9 +706,10 @@ local function PlaySample( type, zone, variation, velocity )
 		end
 	end
 
-	sample:stop()
-	sample:setVolume( velocity / 127 )
-	sample:play()
+	local clone = sample:clone()
+	clone:setPosition( position )
+	clone:setVolume( velocity / 127 )
+	clone:play()
 end
 
 local function UpdateNoteOffEvents()
@@ -749,14 +752,15 @@ function lovr.keypressed( key, scancode, repeating )
 					local zone = "inner"
 					local variation = 4
 					local velocity = 127
+					local position = vec3( drum_kits[ cur_drum_kit_index ][ i ].pose )
 
 					if type == e_drum_kit_piece_type.hihat then
 						zone = "pedal"
 						variation = 1
 						hihat_open_value = 0
-						PlaySample( type, zone, variation, velocity )
+						PlaySample( type, zone, variation, velocity, position )
 					else
-						PlaySample( type, zone, variation, velocity )
+						PlaySample( type, zone, variation, velocity, position )
 					end
 				end
 			end
@@ -833,6 +837,8 @@ function App.Init()
 end
 
 function App.Update( dt )
+	lovr.audio.setPose( lovr.headset.getPose() )
+
 	-- MIDI in test
 
 	-- local a, b, c = MIDI.getMessage( 1 )
@@ -984,7 +990,8 @@ function App.Update( dt )
 					local variation = sticks.left_vel > 0 and math.floor( sticks.left_vel / 32 ) + 1 or 1
 					local sample = samples_list[ type ][ zone ][ variation ]
 					local velocity = sticks.left_vel
-					PlaySample( type, zone, variation, velocity )
+					local position = vec3( drum_kits[ cur_drum_kit_index ][ sticks.left_colliding_drum ].pose )
+					PlaySample( type, zone, variation, velocity, position )
 				end
 
 				if enable_haptics then
@@ -998,7 +1005,7 @@ function App.Update( dt )
 		if sticks.right_colliding_drum ~= nil then
 			if sticks.right_colliding_drum_prev == nil or sticks.right_colliding_drum_prev ~= sticks.right_colliding_drum then
 				if output_mode == "midi" then
-					local triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 2 ]
+					local triggered_note = lovr.headset.getPose().note[ 2 ]
 					if R_inner_col_this_frame then triggered_note = drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].note[ 1 ] end
 
 					MIDI.noteOn( cur_MIDI_port, triggered_note, sticks.right_vel, drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].channel )
@@ -1013,7 +1020,8 @@ function App.Update( dt )
 					local variation = sticks.right_vel > 0 and math.floor( sticks.right_vel / 32 ) + 1 or 1
 					local sample = samples_list[ type ][ zone ][ variation ]
 					local velocity = sticks.right_vel
-					PlaySample( type, zone, variation, velocity )
+					local position = vec3( drum_kits[ cur_drum_kit_index ][ sticks.right_colliding_drum ].pose )
+					PlaySample( type, zone, variation, velocity, position )
 				end
 
 				if enable_haptics then
